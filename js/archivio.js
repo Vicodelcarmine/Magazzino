@@ -153,7 +153,9 @@ export function creaArchivio(opzioni) {
     // Serve per le operazioni che si possono rifare, come il trasloco dei dati; non restituisce le righe.
     inserisci(tabella, righe, opz) {
       const quiete = opz && opz.saltaDoppioni;
-      return conSessione("POST", "/rest/v1/" + tabella, righe,
+      // «on_conflict=id»: si salta SOLO la riga con la stessa identità (già arrivata). Un altro
+      // doppione, per esempio un codice già usato, resta un errore e non sparisce in silenzio.
+      return conSessione("POST", "/rest/v1/" + tabella + (quiete ? "?on_conflict=id" : ""), righe,
         { Prefer: quiete ? "resolution=ignore-duplicates,return=minimal" : "return=representation" });
     },
 

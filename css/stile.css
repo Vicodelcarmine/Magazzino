@@ -251,3 +251,5 @@ details.numeri .num { text-align: right; font-variant-numeric: tabular-nums; }
 }
 .quale-archivio { background: var(--carta); border: 2px solid var(--bordo-tasto); border-radius: var(--raggio); padding: .8rem; margin: .8rem 0; display: grid; gap: .5rem; }
 .quale-archivio .filtri, .quale-archivio .nota { margin: 0; }
+a.bollo { text-decoration: none; }
+.bollo.rifiutato { background: #3b1612; border-color: var(--allarme); color: var(--allarme); }

@@ -15,6 +15,7 @@ import * as preparazioni from "./schermate/preparazioni.js";
 import * as conti from "./schermate/conti.js";
 import * as andamento from "./schermate/andamento.js";
 import * as trasloco from "./schermate/trasloco.js";
+import * as attesa from "./schermate/attesa.js";
 
 const radice = document.getElementById("app");
 // Quale archivio: quello scelto alla schermata di accesso, altrimenti il predefinito.
@@ -58,6 +59,7 @@ function ricordaPreferito(id) {
 }
 
 function mostra(nodo) { radice.replaceChildren(nodo); }
+function chiaveInizio() { return "erp.inizio." + nomeArchivio + "." + archivio.utente().id; }
 
 // La copia dei dati sul dispositivo: una sola per tutta l'app, divisa in spazi per archivio, utente e ristorante.
 let copiaAperta = null;
@@ -78,7 +80,17 @@ async function parti() {
       const piu = Object.keys(CONFIG.archivi).length > 1;
       return mostra(schermataAccesso(archivio, parti, piu ? { archivi: CONFIG.archivi, scelto: nomeArchivio, cambia: cambiaArchivio } : null));
     }
-    const ristoranti = await archivio.leggi("ristoranti", {}, "nome.asc");
+    // Ristoranti e ruolo si ricordano dall'ultima volta: senza rete l'app deve aprirsi lo stesso.
+    let ricordo = null;
+    try { ricordo = JSON.parse(localStorage.getItem(chiaveInizio()) || "null"); } catch (e) { ricordo = null; }
+    let ristoranti, ruoli = (ricordo && ricordo.ruoli) || {}, senzaRete = false;
+    try {
+      ristoranti = await archivio.leggi("ristoranti", {}, "nome.asc");
+    } catch (e) {
+      if (e.tipo !== "rete" || !ricordo) throw e;
+      ristoranti = ricordo.ristoranti;
+      senzaRete = true;
+    }
     const nuovo = (annulla) => mostra(schermataNuovoRistorante(archivio, (r) => {
       ricordaPreferito(r.id);
       location.hash = CASA;
@@ -92,14 +104,19 @@ async function parti() {
         (r) => { ricordaPreferito(r.id); parti(); }, () => nuovo(parti)));
     }
     ricordaPreferito(scelto.id);
-    const mie = await archivio.leggi("appartenenze",
-      { ristorante_id: scelto.id, utente_id: archivio.utente().id });
+    if (!senzaRete) {
+      try {
+        const mie = await archivio.leggi("appartenenze", { ristorante_id: scelto.id, utente_id: archivio.utente().id });
+        ruoli = Object.assign({}, ruoli, { [scelto.id]: mie.length ? mie[0].ruolo : "" });
+        localStorage.setItem(chiaveInizio(), JSON.stringify({ ristoranti: ristoranti, ruoli: ruoli }));
+      } catch (e) { if (e.tipo !== "rete") throw e; }
+    }
     ctx = {
       // Passa a un altro ristorante e riparte dalla prima pagina.
       cambiaRistorante: (id) => { ricordaPreferito(id); location.hash = CASA; location.reload(); },
       ristorante: scelto,
       piuRistoranti: ristoranti.length > 1,
-      titolare: mie.length > 0 && mie[0].ruolo === "titolare",
+      titolare: ruoli[scelto.id] === "titolare",
       dati: creaDati(archivio, scelto.id, await copiaLocale(), spazioDi(scelto.id)),
     };
     await naviga();
@@ -131,14 +148,14 @@ function cornice(sezione, contenuto) {
         ctx.dati.stato().fuoriLinea ? h("span", { class: "bollo da_completare" }, "senza rete" + (ctx.dati.stato().quando
           ? ": dati delle " + new Date(ctx.dati.stato().quando).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })
           : ": dati dell'ultima volta")) : null,
+        ctx.dati.stato().inAttesa ? h("a", { class: "bollo da_completare", href: "#/attesa" },
+          ctx.dati.stato().inAttesa + (ctx.dati.stato().inAttesa === 1 ? " operazione in attesa" : " operazioni in attesa") + " di rete") : null,
+        ctx.dati.stato().rifiutate ? h("a", { class: "bollo rifiutato", href: "#/attesa" },
+          ctx.dati.stato().rifiutate + (ctx.dati.stato().rifiutate === 1 ? " operazione rifiutata" : " operazioni rifiutate")) : null,
         h("span", { class: "nota" }, archivio.utente().email),
         h("button", { class: "leggero", onclick: () => { ricordaPreferito(null); ctx = null; storia.azzera(); parti(); } },
           "Cambia ristorante"),
-        h("button", { class: "leggero", onclick: async () => {
-          // Uscendo, i dati di questo utente spariscono dal dispositivo: chi entra dopo non li trova.
-          try { (await copiaLocale()).svuota(nomeArchivio + "|" + archivio.utente().id + "|"); } catch (e) { /* si esce lo stesso */ }
-          await archivio.esci(); ctx = null; storia.azzera(); parti();
-        } }, "Esci"))),
+        tastoEsci())),
     h("nav", { class: "principale" }, VOCI.map((v) => {
       const qui = v[0] === sezione || (v[0] === "piatti" && inAnagrafica(sezione));
       return h("a", { href: "#/" + v[0], class: "voce-menu" + (qui ? " qui" : "") }, v[1]);
@@ -147,6 +164,28 @@ function cornice(sezione, contenuto) {
       h("a", { href: "#/" + v[0], class: "voce-" + v[0] + (v[0] === sezione ? " qui" : "") }, v[1]))) : null,
     h("main", {}, contenuto),
     h("footer", {}, "Versione " + VERSIONE));
+}
+
+// Uscendo, i dati di questo utente spariscono dal dispositivo: chi entra dopo non li trova.
+// Ma se ci sono operazioni non ancora spedite, uscire le farebbe perdere: prima lo si dice.
+function tastoEsci() {
+  async function esci() {
+    try { (await copiaLocale()).svuota(nomeArchivio + "|" + archivio.utente().id + "|"); } catch (e) { /* si esce lo stesso */ }
+    try { localStorage.removeItem(chiaveInizio()); } catch (e) { /* niente da togliere */ }
+    await archivio.esci(); ctx = null; storia.azzera(); parti();
+  }
+  const guscio = h("span", { class: "conferma" });
+  const normale = h("button", { class: "leggero", onclick: async () => {
+    let inAttesa = 0;
+    try { inAttesa = (await ctx.dati.coda()).attesa.length; } catch (e) { inAttesa = 0; }
+    if (!inAttesa) return esci();
+    guscio.replaceChildren(
+      h("span", { class: "errore" }, "Hai " + inAttesa + " operazioni non ancora spedite: se esci adesso vanno perse."),
+      h("button", { onclick: () => guscio.replaceChildren(normale) }, "Resto"),
+      h("button", { class: "pericolo", onclick: esci }, "Esco lo stesso"));
+  } }, "Esci");
+  guscio.append(normale);
+  return guscio;
 }
 
 async function naviga() {
@@ -161,6 +200,7 @@ async function naviga() {
     else if (sezione === "spesa") vista = await conti.spesa(ctx);
     else if (sezione === "costi") vista = await conti.costi(ctx);
     else if (sezione === "andamento") vista = await andamento.pagina(ctx);
+    else if (sezione === "attesa") vista = await attesa.pagina(ctx, naviga);
     else if (sezione === "trasloco") vista = await trasloco.pagina(ctx, archivio, nomeArchivio);
     else if (sezione === "articoli") vista = id ? await articoli.scheda(ctx, id) : await articoli.elenco(ctx);
     else if (sezione === "preparazioni") vista = id ? await preparazioni.scheda(ctx, id, naviga) : await preparazioni.elenco(ctx);
@@ -184,4 +224,10 @@ if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").catch(() => { /* senza, l'app funziona lo stesso con la rete */ });
 }
 window.addEventListener("hashchange", naviga);
+// Quando il telefono ritrova la rete, le operazioni in attesa partono subito e la pagina si aggiorna.
+window.addEventListener("online", async () => {
+  if (!ctx) return;
+  try { await ctx.dati.spedisciOra(); } catch (e) { /* si riproverà alla prossima pagina */ }
+  naviga();
+});
 parti();

@@ -5,6 +5,7 @@ import { inBase } from "./unita.js";
 import { codiceNuovo } from "./codici.js";
 import { datiEsempio, ORDINE_ESEMPIO } from "./demo.js";
 import { COPIATE, allineaTabella } from "./allinea.js";
+import { accoda, applica, inCoda, riapplica, spedisci } from "./coda.js";
 
 export class ErroreDato extends Error {}
 
@@ -25,33 +26,92 @@ export function creaDati(archivioVero, ristoranteId, copia, spazio) {
   const qui = { ristorante_id: ristoranteId };
   const daRivedere = new Set(COPIATE); // tabelle in cui si è appena scritto: da riallineare subito
   let ultimo = 0, inCorso = null;
-  const stato = { quando: null, fuoriLinea: false };
+  const stato = { quando: null, fuoriLinea: false, inAttesa: 0, rifiutate: 0 };
   const breve = new Map(); // senza copia: le letture intere valgono per un minuto
+
+  // ----- scritture: dirette se c'è la rete, altrimenti in coda sul dispositivo (vedi coda.js) -----
+  async function contaCoda() {
+    if (!copia) return;
+    const c = await inCoda(copia, spazio);
+    stato.inAttesa = c.attesa.length;
+    stato.rifiutate = c.rifiutate.length;
+  }
+  // Un articolo o un piatto creato senza rete ha preso il primo codice libero che il telefono conosceva:
+  // se nel frattempo l'ha preso qualcun altro, si rifà sui dati freschi.
+  async function ricodifica(op) {
+    await Promise.all(["articoli", "piatti"].map((t) => allineaTabella(archivioVero, copia, spazio, ristoranteId, t)));
+    const mie = new Set(op.righe.map((r) => r.id));
+    const articoli = (await copia.leggi(spazio, "articoli")).filter((r) => !mie.has(r.id));
+    const piatti = (await copia.leggi(spazio, "piatti")).filter((r) => !mie.has(r.id));
+    return op.righe.map((r) => {
+      const famiglia = op.tabella === "piatti" ? "piatto" : (r.prodotto_in_cucina ? "preparazione" : "articolo");
+      const codice = codiceNuovo(famiglia, r.categoria, articoli, piatti);
+      (op.tabella === "piatti" ? piatti : articoli).push({ codice: codice, categoria: r.categoria });
+      return Object.assign({}, r, { codice: codice });
+    });
+  }
+  async function spedisciCoda() {
+    if (!copia) return { ferme: 0, spedite: 0, rifiutate: 0 };
+    const e = await spedisci(archivioVero, copia, spazio, { ricodifica: ricodifica });
+    e.tabelle.forEach((t) => daRivedere.add(t));
+    await contaCoda();
+    return e;
+  }
+  async function inCodaAdesso(op) {
+    stato.fuoriLinea = true;
+    const righe = await accoda(copia, spazio, op);
+    await contaCoda();
+    return righe;
+  }
+  async function scrivi(op, diretta) {
+    daRivedere.add(op.tabella);
+    breve.delete(op.tabella);
+    if (copia && (await inCoda(copia, spazio)).attesa.length) {
+      // Ci sono operazioni più vecchie in attesa: partono prima loro, l'ordine conta.
+      if ((await spedisciCoda()).ferme) return inCodaAdesso(op);
+    }
+    try {
+      return await diretta();
+    } catch (e) {
+      if (!copia || e.tipo !== "rete") throw e; // un rifiuto vero si dice subito a chi sta scrivendo
+      return inCodaAdesso(op);
+    }
+  }
   const archivio = Object.assign(Object.create(archivioVero), {
-    inserisci(tabella, ...a) { daRivedere.add(tabella); breve.delete(tabella); return archivioVero.inserisci(tabella, ...a); },
-    modifica(tabella, ...a) { daRivedere.add(tabella); breve.delete(tabella); return archivioVero.modifica(tabella, ...a); },
+    inserisci(tabella, righe, opz) {
+      const lista = Array.isArray(righe) ? righe : [righe];
+      return scrivi({ tipo: "inserisci", tabella: tabella, righe: lista }, () => archivioVero.inserisci(tabella, righe, opz));
+    },
+    modifica(tabella, filtri, cambi) {
+      return scrivi({ tipo: "modifica", tabella: tabella, filtri: filtri, cambi: cambi }, () => archivioVero.modifica(tabella, filtri, cambi));
+    },
   });
 
   // Porta la copia in pari con l'archivio: subito per le tabelle appena scritte, una volta al minuto per le altre.
+  // Prima di scaricare, fa partire le operazioni rimaste in coda.
   function allinea() {
     if (inCorso) return inCorso;
     const tutte = Date.now() - ultimo > OGNI;
-    const quali = tutte ? COPIATE.slice() : Array.from(daRivedere);
-    if (!quali.length) return Promise.resolve();
+    if (!tutte && !daRivedere.size) return Promise.resolve();
     inCorso = (async () => {
+      let quali = [];
       try {
+        await contaCoda();
+        if (stato.inAttesa && (tutte || !stato.fuoriLinea)) await spedisciCoda();
+        quali = tutte ? COPIATE.slice() : Array.from(daRivedere);
         await Promise.all(quali.map((t) => allineaTabella(archivioVero, copia, spazio, ristoranteId, t)));
         quali.forEach((t) => daRivedere.delete(t));
         if (tutte) ultimo = Date.now();
         stato.quando = Date.now();
         stato.fuoriLinea = false;
+        await riapplica(copia, spazio); // ciò che è ancora in coda resta visibile sopra i dati scaricati
       } catch (e) {
         // Senza rete si va avanti con la copia, se c'è già stata almeno una volta. Si riprova fra poco.
         const maiScaricata = !(await copia.segno(spazio, "articoli")) && !(await copia.conta(spazio, "articoli"));
         if (e.tipo !== "rete" || maiScaricata) throw e;
         stato.fuoriLinea = true;
         ultimo = Date.now() - OGNI + 15000;
-        quali.forEach((t) => daRivedere.delete(t));
+        daRivedere.clear();
       } finally { inCorso = null; }
     })();
     return inCorso;
@@ -95,8 +155,21 @@ export function creaDati(archivioVero, ristoranteId, copia, spazio) {
   }
 
   const api = {
-    // Quando sono stati presi i dati e se in questo momento manca la rete.
+    // Quando sono stati presi i dati, se manca la rete, e quante operazioni aspettano di partire.
     stato() { return Object.assign({}, stato); },
+    // Le operazioni fatte senza rete: quelle in attesa e quelle che l'archivio ha rifiutato.
+    async coda() { return copia ? inCoda(copia, spazio) : { attesa: [], rifiutate: [] }; },
+    // Prova adesso a far partire ciò che aspetta (per esempio quando torna il segnale).
+    async spedisciOra() { ultimo = 0; await allinea(); return Object.assign({}, stato); },
+    // Un'operazione rifiutata si può buttare via, oppure rimettere in attesa per riprovarla.
+    async scartaRifiutata(n) { await copia.codaTogli(spazio, n); await contaCoda(); },
+    async riprovaRifiutata(n) {
+      const op = (await copia.codaTutte(spazio)).find((o) => o.n === n);
+      if (!op) return;
+      await copia.codaMetti(spazio, Object.assign({}, op, { stato: "attesa", motivo: "" }));
+      await applica(copia, spazio, op);
+      await spedisciCoda();
+    },
     async articoli() { return (await tutta("articoli")).slice().sort(perNome); },
     async fornitori() { return (await tutta("fornitori")).slice().sort(perNome); },
     async piatti() { return (await tutta("piatti")).slice().sort(perNome); },

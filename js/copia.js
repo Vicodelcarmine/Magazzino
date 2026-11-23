@@ -38,6 +38,10 @@ function conMemoria(disco) {
     },
     segno(s, t) { return disco.segno(s, t); },
     mettiSegno(s, t, n) { return disco.mettiSegno(s, t, n); },
+    // La coda delle operazioni fatte senza rete, in attesa di partire (vedi coda.js).
+    codaTutte(s) { return disco.codaTutte(s); },
+    codaMetti(s, op) { return disco.codaMetti(s, op); },
+    codaTogli(s, n) { return disco.codaTogli(s, n); },
     // Cancella dal dispositivo tutti gli spazi che cominciano così (per esempio all'uscita di un utente).
     async svuota(inizio) {
       Array.from(memoria.keys()).forEach((x) => { if (x.startsWith(inizio)) memoria.delete(x); });
@@ -48,7 +52,7 @@ function conMemoria(disco) {
 
 // Copia che vive solo finché la pagina è aperta: per le prove e per i browser senza disco.
 export function copiaInMemoria() {
-  const righe = new Map(), segni = new Map();
+  const righe = new Map(), segni = new Map(), code = new Map();
   const k = (s, t) => s + "|" + t;
   return conMemoria({
     async leggi(s, t) { return Array.from((righe.get(k(s, t)) || new Map()).values()); },
@@ -59,8 +63,11 @@ export function copiaInMemoria() {
     async svuotaTabella(s, t) { righe.delete(k(s, t)); },
     async segno(s, t) { return segni.get(k(s, t)) || 0; },
     async mettiSegno(s, t, n) { segni.set(k(s, t), n); },
+    async codaTutte(s) { return Array.from((code.get(s) || new Map()).values()).sort((a, b) => a.n - b.n).map((o) => JSON.parse(JSON.stringify(o))); },
+    async codaMetti(s, op) { if (!code.has(s)) code.set(s, new Map()); code.get(s).set(op.n, JSON.parse(JSON.stringify(op))); },
+    async codaTogli(s, n) { if (code.has(s)) code.get(s).delete(n); },
     async svuota(inizio) {
-      [righe, segni].forEach((m) => Array.from(m.keys()).forEach((x) => { if (x.startsWith(inizio)) m.delete(x); }));
+      [righe, segni, code].forEach((m) => Array.from(m.keys()).forEach((x) => { if (x.startsWith(inizio)) m.delete(x); }));
     },
   });
 }
@@ -82,16 +89,18 @@ export async function apriCopia(nome) {
   if (typeof indexedDB === "undefined") return copiaInMemoria();
   let db;
   try {
-    const apertura = indexedDB.open(nome || "erp-copia", 1);
+    const apertura = indexedDB.open(nome || "erp-copia", 2);
     apertura.onupgradeneeded = () => {
-      apertura.result.createObjectStore("righe", { keyPath: ["s", "t", "id"] });
-      apertura.result.createObjectStore("segni", { keyPath: ["s", "t"] });
+      const d = apertura.result;
+      if (!d.objectStoreNames.contains("righe")) d.createObjectStore("righe", { keyPath: ["s", "t", "id"] });
+      if (!d.objectStoreNames.contains("segni")) d.createObjectStore("segni", { keyPath: ["s", "t"] });
+      if (!d.objectStoreNames.contains("coda")) d.createObjectStore("coda", { keyPath: ["s", "n"] });
     };
     db = await promessa(apertura);
   } catch (e) {
     return copiaInMemoria();
   }
-  const tutte = (s, t) => IDBKeyRange.bound([s, t, ""], [s, t, "￿"]);
+  const tutte = (s, t) => IDBKeyRange.bound([s, t, ""], [s, t, String.fromCharCode(0xffff)]);
   return conMemoria({
     async leggi(s, t) {
       const trovate = await promessa(db.transaction("righe").objectStore("righe").getAll(tutte(s, t)));
@@ -117,11 +126,27 @@ export async function apriCopia(nome) {
       tx.objectStore("segni").put({ s: s, t: t, n: n });
       await finita(tx);
     },
+    async codaTutte(s) {
+      const trovate = await promessa(db.transaction("coda").objectStore("coda").getAll(IDBKeyRange.bound([s, 0], [s, Infinity])));
+      return trovate.map((x) => x.op);
+    },
+    async codaMetti(s, op) {
+      const tx = db.transaction("coda", "readwrite");
+      tx.objectStore("coda").put({ s: s, n: op.n, op: op });
+      await finita(tx);
+    },
+    async codaTogli(s, n) {
+      const tx = db.transaction("coda", "readwrite");
+      tx.objectStore("coda").delete([s, n]);
+      await finita(tx);
+    },
     async svuota(inizio) {
-      const intervallo = IDBKeyRange.bound([inizio], [inizio + "￿", "￿", "￿"]);
-      const tx = db.transaction(["righe", "segni"], "readwrite");
+      const FINE = String.fromCharCode(0xffff);
+      const intervallo = IDBKeyRange.bound([inizio], [inizio + FINE, FINE, FINE]);
+      const tx = db.transaction(["righe", "segni", "coda"], "readwrite");
       tx.objectStore("righe").delete(intervallo);
       tx.objectStore("segni").delete(intervallo);
+      tx.objectStore("coda").delete(IDBKeyRange.bound([inizio], [inizio + FINE, Infinity]));
       await finita(tx);
     },
   });
