@@ -162,3 +162,10 @@ export function trovaFattura(fatture, fornitoreId, numero, data) {
   return (fatture || []).find((f) => f.fornitore_id === fornitoreId && String(f.numero).trim() === n
     && String(f.data).slice(0, 4) === anno) || null;
 }
+
+// Il nome di un fornitore ridotto all'osso, per riconoscere «Biancalani Srl» e «BIANCALANI S.R.L.» come lo stesso.
+export function nomeFornitore(nome) {
+  return String(nome || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/\b(s\.?\s?r\.?\s?l\.?\s?s?\.?|s\.?\s?p\.?\s?a\.?|s\.?\s?n\.?\s?c\.?|s\.?\s?a\.?\s?s\.?|societa|unipersonale)(?=\s|$)/g, " ")
+    .replace(/[^a-z0-9]+/g, " ").trim();
+}
