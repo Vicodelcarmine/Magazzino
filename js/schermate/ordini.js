@@ -4,6 +4,7 @@ import { qta, perCampo, parseNumero } from "../numeri.js";
 import * as motore from "../motore.js";
 import * as regole from "../ordini.js";
 import { sceltaArticolo } from "./scegli.js";
+import { blocchiConfronto } from "./fatture.js";
 
 const giorno = (d) => (d ? new Date(d).toLocaleDateString("it-IT", { weekday: "short", day: "2-digit", month: "2-digit" }) : "—");
 const dataBreve = (d) => { const p = String(d || "").slice(0, 10).split("-"); return p.length === 3 ? p[2] + "/" + p[1] : "—"; };
@@ -133,6 +134,17 @@ export async function scheda(ctx, id, ridisegna) {
   const stato = h("p", { class: "nota", role: "status" });
   const prova = async (azione) => { errore.textContent = ""; try { await azione(); ridisegna(); } catch (e) { errore.textContent = e.message; } };
   const ritardo = regole.inRitardo(o, adesso);
+  // Se la fattura è arrivata, il confronto resta qui: cosa mancava, cosa è arrivato in più.
+  let confronto = null;
+  if (o.fattura_id) {
+    const fattura = (await ctx.dati.fatture()).find((f) => f.id === o.fattura_id);
+    if (fattura) {
+      let entrate = [];
+      try { entrate = JSON.parse(fattura.righe || "[]").filter((r) => r.azione === "carica"); } catch (e) { entrate = []; }
+      const nomi = new Map((await ctx.dati.articoli()).map((a) => [a.id, a]));
+      confronto = blocchiConfronto(regole.confronta(righe, entrate, nomi), "Confronto con la fattura " + fattura.numero, "");
+    }
+  }
   return h("section", {},
     h("div", { class: "testata" }, h("h2", {}, "Ordine a " + (fornitore ? fornitore.nome : "fornitore")), bollo(o, adesso)),
     h("ul", { class: "voci" },
@@ -143,6 +155,7 @@ export async function scheda(ctx, id, ridisegna) {
     h("h3", {}, "Cosa hai ordinato"),
     h("ul", { class: "lista" }, righe.map((r) => h("li", { class: "riga tipo-articolo" }, h("strong", {}, r.nome), h("span", { class: "numero" }, regole.quantoTesto(r))))),
     o.nota ? h("p", { class: "nota" }, "Nota: " + o.nota) : null,
+    confronto,
     o.stato === "aperto" ? h("div", {},
       h("h3", {}, "Invia l'ordine"),
       h("p", { class: "nota" }, "Si apre WhatsApp o la posta col messaggio già scritto: scegli il fornitore e premi invio."),

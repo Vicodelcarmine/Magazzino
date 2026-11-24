@@ -296,3 +296,8 @@ a.reparto-icona strong { font-size: 1.05rem; }
 .testa-reparto { margin: 0 .6rem .6rem; }
 pre.messaggio { white-space: pre-wrap; background: var(--campo); border: 1px solid var(--bordo); border-radius: var(--raggio); padding: .8rem; font: inherit; font-size: .9rem; user-select: all; }
 a.reparto-icona.allarme { border-color: var(--allarme); }
+.scheda-confronto { border: 2px solid var(--bordo-tasto); border-radius: var(--raggio); padding: .2rem .9rem .8rem; margin: 1rem 0; background: var(--carta); }
+.scheda-confronto.allarme { border-color: var(--giallo); }
+.scheda-confronto h3 { margin: .7rem 0 .4rem; }
+.scheda-confronto .voci { background: transparent; margin-bottom: .5rem; }
+.scheda-confronto p { margin: .5rem 0 .3rem; }

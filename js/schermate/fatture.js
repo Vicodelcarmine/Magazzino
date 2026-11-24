@@ -8,6 +8,7 @@ import { leggiTesto } from "../fatture/pdf.js";
 import * as xml from "../fatture/xml.js";
 import * as carico from "../fatture/carico.js";
 import { inRitardo } from "../ordini.js";
+import * as regoleOrdini from "../ordini.js";
 import { sceltaArticolo } from "./scegli.js";
 import { tipoDi, etichettaArticolo } from "./segni.js";
 
@@ -153,11 +154,29 @@ function perAnni(fatture, nomi) {
           h("ul", { class: "lista" }, lista.map(riga)))))));
 }
 
+// Il riquadro del confronto fra ordine e fattura: usato qui e nella pagina dell'ordine.
+export function blocchiConfronto(c, titolo, nota) {
+  const voce = (x, testo, classe) => h("li", { class: "voce" }, h("span", {}, x.nome), h("strong", { class: classe || "" }, testo));
+  const q = (n, udm) => qta(n) + " " + udm;
+  return h("div", { class: "scheda-confronto" + (c.tuttoTorna ? "" : " allarme") }, h("h3", {}, titolo),
+    c.tuttoTorna ? h("p", { class: "nota" }, "✓ Tutto come ordinato (" + c.uguali.length + (c.uguali.length === 1 ? " articolo" : " articoli") + ").") : null,
+    c.mancanti.length ? [h("p", { class: "errore" }, "Ordinato e non in fattura"), h("ul", { class: "voci" }, c.mancanti.map((x) => voce(x, "ordinati " + q(x.ordinata, x.udm), "rosso")))] : null,
+    c.diverse.length ? [h("p", { class: "nota avviso" }, "Quantità diversa da quella ordinata"), h("ul", { class: "voci" }, c.diverse.map((x) =>
+      voce(x, "ordinati " + q(x.ordinata, x.udm) + ", in fattura " + q(x.arrivata, x.udm))))] : null,
+    c.inPiu.length ? [h("p", { class: "nota avviso" }, "In fattura ma non ordinato"), h("ul", { class: "voci" }, c.inPiu.map((x) => voce(x, q(x.arrivata, x.udm))))] : null,
+    !c.tuttoTorna && c.uguali.length ? h("p", { class: "nota" }, "Il resto (" + c.uguali.length + (c.uguali.length === 1 ? " articolo" : " articoli") + ") è come ordinato.") : null,
+    nota ? h("p", { class: "nota" }, nota) : null);
+}
+
 // ---------- revisione della fattura appena letta ----------
 export async function rivedi(ctx) {
   if (!bozza) return vuoto("Non c'è nessuna fattura in revisione: torna a Fatture e caricane una.");
   const b = bozza;
   const articoli = (await ctx.dati.articoli()).filter((a) => a.attivo !== false && !a.prodotto_in_cucina);
+  // L'ordine che aspettava questa fattura (se c'è) e i prezzi pagati finora: per il confronto qui sotto.
+  const ordine = regoleOrdini.ordinePerFattura(await ctx.dati.ordini(), b.testata.fornitore_id, b.testata.data);
+  const prezzi = (await ctx.dati.perIConti(ctx.ristorante)).prezzi;
+  const riquadroConfronto = h("div", { class: "confronto" });
   const perId = new Map(articoli.map((a) => [a.id, a]));
   const abbinamenti = carico.indice(await ctx.dati.abbinamenti(), b.testata.fornitore_id);
   const giaCaricata = b.gia && b.gia.stato === "caricata";
@@ -174,6 +193,23 @@ export async function rivedi(ctx) {
     ].filter(Boolean).join(" · ");
     conto.className = "nota" + (r.daDecidere ? " avviso" : "");
     conferma.disabled = giaCaricata || r.daDecidere > 0 || !ctx.titolare;
+    disegnaConfronto();
+  }
+
+  // Si aggiorna a ogni scelta: dice subito cosa non torna con l'ordine e quali prezzi sono saliti.
+  function disegnaConfronto() {
+    const entrano = b.righe.filter((r) => r.azione === "carica" && r.articolo_id && Number(r.quantita) > 0);
+    const pezzi = [];
+    const su = regoleOrdini.aumenti(entrano, prezzi, b.testata.fornitore_id, ctx.ristorante.soglia_allerta, perId);
+    if (su.length) pezzi.push(h("div", { class: "scheda-confronto allarme" }, h("h3", {}, "Prezzi saliti rispetto all'ultima fattura"),
+      h("ul", { class: "voci" }, su.map((x) => h("li", { class: "voce" }, h("span", {}, x.nome),
+        h("strong", { class: "rosso" }, euro(x.prima) + " → " + euro(x.ora) + " al " + x.udm + " (+" + Math.round(x.delta * 100) + "%)"))))));
+    if (ordine) {
+      const c = regoleOrdini.confronta(regoleOrdini.righeDi(ordine), entrano, perId);
+      const quando = new Date(ordine.inviato_il).toLocaleDateString("it-IT", { weekday: "long", day: "2-digit", month: "2-digit" });
+      pezzi.push(blocchiConfronto(c, "Confronto con l'ordine di " + quando, giaCaricata ? "" : "Si aggiorna mentre scegli gli articoli qui sopra."));
+    }
+    riquadroConfronto.replaceChildren(...pezzi);
   }
 
   function disegnaRiga(r, li) {
@@ -276,7 +312,7 @@ export async function rivedi(ctx) {
       h("a", { href: "#/fatture/" + b.gia.id }, "Aprila")) : null,
     ctx.titolare ? null : h("p", { class: "nota avviso" }, "Solo il titolare può caricare le fatture."),
     h("h3", {}, "Righe (" + b.righe.length + ")"),
-    lista, conto, errore,
+    lista, riquadroConfronto, conto, errore,
     h("div", { class: "azioni" }, conferma,
       conConferma("Lascia perdere", "Sì, chiudi senza caricare", () => { bozza = null; location.hash = "#/fatture"; })));
 }
