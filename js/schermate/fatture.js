@@ -104,6 +104,8 @@ export async function guardaPosta(ctx) {
     } catch (e) {
       if (e.tipo === "rete" || e.tipo === "sessione") break; // non è colpa del file: si riprova la prossima volta
       await ctx.dati.segnaPosta(p.id, { stato: "scartata", nota: String(e.message || "Non letto").slice(0, 300) });
+      // Non è una fattura: il documento non deve restare nel magazzino (può essere una busta paga, un atto…).
+      try { await ctx.dati.svuotaFilePosta(p.id); } catch (x) { /* resta la riga scartata; si riprova dalla pagina della posta */ }
       esito.scartate += 1;
     }
   }

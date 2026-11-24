@@ -422,6 +422,8 @@ export function creaDati(archivioVero, ristoranteId, copia, spazio) {
       if (!r.length) throw new ErroreDato("Non trovo più il file di questa email.");
       return r[0].contenuto;
     },
+    // Un allegato scartato non serve più: se ne cancella il contenuto (resta la riga, col motivo). «-» = svuotato.
+    svuotaFilePosta(id) { return archivioVero.modifica("posta_file", { id: id, ristorante_id: ristoranteId }, { contenuto: "-" }); },
     segnaPosta(id, cambi) { return archivioVero.modifica("posta_arrivata", { id: id, ristorante_id: ristoranteId }, cambi); },
     // Una fattura riconosciuta nella posta entra in elenco come «arrivata, da caricare». Se c'è già, resta quella.
     async registraArrivata(testata) {

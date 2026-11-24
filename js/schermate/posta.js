@@ -63,8 +63,7 @@ export async function pagina(ctx, nomeArchivio, ridisegna) {
       p.stato === "fattura" ? "fattura" : p.stato === "nuova" ? "da guardare" : "scartato"),
     h("span", { class: "nota" }, [mittenteBreve(p.mittente), quando(p.ricevuta_il), p.stato === "scartata" ? p.nota : null].filter(Boolean).join(" · ")),
     p.stato === "fattura" && p.fattura_id ? h("a", { href: "#/fatture/" + p.fattura_id }, "Apri la fattura") : null,
-    p.stato === "scartata" ? h("button", { type: "button", class: "leggero",
-      onclick: () => prova(() => ctx.dati.segnaPosta(p.id, { stato: "nuova", nota: "" })) }, "Riprova a leggerlo") : null);
+    null);
 
   return h("section", {},
     h("div", { class: "testata" }, h("h2", {}, "Fatture dalla posta")),
@@ -77,5 +76,5 @@ export async function pagina(ctx, nomeArchivio, ridisegna) {
     istruzioni,
     h("h3", {}, "Arrivati per posta (" + arrivi.length + ")"),
     arrivi.length ? h("ul", { class: "lista" }, arrivi.slice(0, 40).map(riga)) : vuoto("Ancora niente."),
-    scartate.length ? h("p", { class: "nota" }, "Gli allegati scartati sono quelli che non so leggere come fattura: PDF che non sono di Metro, immagini, altri documenti.") : null);
+    scartate.length ? h("p", { class: "nota" }, "Gli allegati scartati sono quelli che non so leggere come fattura: PDF che non sono di Metro, altri documenti. Il loro contenuto viene cancellato dal magazzino: qui restano solo nome, mittente e motivo. L'email originale resta nella tua posta.") : null);
 }
