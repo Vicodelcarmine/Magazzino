@@ -148,6 +148,9 @@ export async function spesa(ctx) {
     : qta(r.quantita) + " " + r.udm);
   return h("section", {},
     h("div", { class: "testata" }, h("h2", {}, "Spesa"), h("a", { class: "pulsante", href: "#/ordini" }, "Ordini inviati")),
+    h("div", { class: "filtri" },
+      h("a", { class: "pulsante filtro attivo", href: "#/spesa" }, "Per fornitore (ordino)"),
+      h("a", { class: "pulsante filtro", href: "#/spesa/unica" }, "Lista unica (vado io)")),
     aggiornamento(c),
     h("p", { class: "nota" }, "Quanto serve per i prossimi " + c.opz.giorniCopertura + " giorni, in base alle vendite degli ultimi "
       + c.opz.giorniStorico + ", alle ricette e allo sfrido, tolto quello che c'è in magazzino."),
@@ -176,6 +179,58 @@ export async function spesa(ctx) {
         ].join(" · ")),
         r.avviso ? h("span", { class: "nota avviso" }, r.avviso) : null)) })
       : vuoto("Niente da ordinare: quello che c'è in magazzino copre i prossimi giorni."));
+}
+
+// ---------- Spesa, lista unica: per quando la spesa si va a farla di persona ----------
+// Tutto ciò che serve, di qualunque fornitore, in una lista sola divisa per reparto (come le corsie),
+// con la spunta per ciò che si è già messo nel carrello. Le spunte restano sul telefono finché non si ricomincia.
+export async function spesaUnica(ctx, ridisegna) {
+  const c = await conti(ctx);
+  const sp = motore.spesa(c);
+  const chiave = "erp.spesa.presi." + ctx.ristorante.id;
+  let presi = new Set();
+  try { presi = new Set(JSON.parse(localStorage.getItem(chiave) || "[]")); } catch (e) { presi = new Set(); }
+  const ricorda = () => { try { localStorage.setItem(chiave, JSON.stringify(Array.from(presi))); } catch (e) { /* le spunte valgono finché la pagina è aperta */ } };
+  // Una spunta rimasta su un articolo che non serve più non conta.
+  const servono = new Set(sp.righe.map((r) => r.id));
+  presi.forEach((id) => { if (!servono.has(id)) presi.delete(id); });
+  const quanto = (r) => (r.colli != null
+    ? r.colli + (r.colli === 1 ? " confezione" : " confezioni") + " da " + qta(r.qtaConfezione) + " " + r.udm
+    : qta(r.quantita) + " " + r.udm);
+  const quantiPresi = h("strong", {}, String(presi.size));
+  const contaReparto = (voci) => voci.filter((r) => presi.has(r.id)).length + " di " + voci.length + " presi";
+
+  const riga = (r) => {
+    const spunta = h("input", { type: "checkbox", checked: presi.has(r.id), "aria-label": "Preso: " + r.nome });
+    const li = h("li", {}, h("label", { class: "riga tipo-articolo riga-spesa" + (presi.has(r.id) ? " presa" : "") },
+      spunta, h("strong", {}, r.nome), h("span", { class: "numero" }, quanto(r)),
+      h("span", { class: "nota" }, [r.fornitore ? "di solito da " + r.fornitore : "nessun fornitore abituale", r.costo == null ? null : "circa " + euro(r.costo)].filter(Boolean).join(" · "))));
+    spunta.addEventListener("change", () => {
+      if (spunta.checked) presi.add(r.id); else presi.delete(r.id);
+      ricorda();
+      li.firstChild.classList.toggle("presa", spunta.checked);
+      quantiPresi.textContent = String(presi.size);
+      const reparto = li.closest("details");
+      const conto = reparto && reparto.querySelector("summary .numero");
+      if (conto) conto.textContent = reparto.querySelectorAll("input:checked").length + " di " + reparto.querySelectorAll("input[type=checkbox]").length + " presi";
+    });
+    return li;
+  };
+  return h("section", {},
+    h("div", { class: "testata" }, h("h2", {}, "Spesa")),
+    h("div", { class: "filtri" },
+      h("a", { class: "pulsante filtro", href: "#/spesa" }, "Per fornitore (ordino)"),
+      h("a", { class: "pulsante filtro attivo", href: "#/spesa/unica" }, "Lista unica (vado io)")),
+    h("p", { class: "nota" }, "Tutto quello che serve, di qualunque fornitore, diviso per reparto. Spunta ciò che metti nel carrello: le spunte restano anche se chiudi l'app."),
+    h("div", { class: "riquadri" },
+      riquadro(String(sp.righe.length), "articoli da comprare"),
+      h("div", { class: "riquadro" }, quantiPresi, h("span", {}, "già presi")),
+      riquadro(euro(sp.totale) + (sp.parziale ? " +" : ""), "spesa prevista")),
+    sp.righe.length ? reparti({ voci: sp.righe, riga: riga, memoria: "spesa-unica", unita: ["articolo", "articoli"],
+      valore: contaReparto, filtri: [["mancano", "Solo quelli ancora da prendere", (r) => !presi.has(r.id)]],
+      cerca: "Cerca un articolo nella lista" })
+      : vuoto("Niente da comprare: quello che c'è in magazzino copre i prossimi giorni."),
+    presi.size ? h("div", { class: "azioni" }, conConferma("Togli tutte le spunte", "Sì, ricomincia da capo", () => { presi.clear(); ricorda(); ridisegna(); })) : null);
 }
 
 // ---------- Costi: food cost e allerta prezzi ----------
