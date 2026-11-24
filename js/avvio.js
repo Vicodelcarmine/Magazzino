@@ -20,6 +20,8 @@ import * as fatture from "./schermate/fatture.js";
 import * as casa from "./schermate/casa.js";
 import * as ordini from "./schermate/ordini.js";
 import * as posta from "./schermate/posta.js";
+import * as cassaPagina from "./schermate/cassa.js";
+import { vociDaSistemare } from "./cassa.js";
 import { preparaSuono, suona, mostraAvviso } from "./avviso.js";
 
 const radice = document.getElementById("app");
@@ -214,6 +216,7 @@ async function naviga() {
     else if (sezione === "fatture") vista = id ? await fatture.scheda(ctx, id, naviga) : await fatture.elenco(ctx);
     else if (sezione === "ordine-nuovo") vista = await ordini.nuovo(ctx, id);
     else if (sezione === "ordini") vista = id ? await ordini.scheda(ctx, id, naviga) : await ordini.elenco(ctx);
+    else if (sezione === "cassa") vista = await cassaPagina.pagina(ctx, naviga);
     else if (sezione === "posta") vista = await posta.pagina(ctx, nomeArchivio, naviga);
     else if (sezione === "attesa") vista = await attesa.pagina(ctx, naviga);
     else if (sezione === "trasloco") vista = await trasloco.pagina(ctx, archivio, nomeArchivio);
@@ -228,6 +231,7 @@ async function naviga() {
       mostra(cornice(sezione, vista));
       if (sezione === "fatture" || sezione === "posta") nuoveFatture = 0; // viste: il tasto smette di lampeggiare
       segnaFatture();
+      segnaCassa();
       // Una pagina nuova si apre dall'inizio; una pagina solo ridisegnata resta dov'era.
       if (cambiata) window.scrollTo(0, 0);
       mostrata = location.hash || CASA;
@@ -247,6 +251,15 @@ function segnaFatture() {
     segno.textContent = String(daCaricare);
   });
 }
+let vociCassa = 0; // voci di cassa senza piatto
+function segnaCassa() {
+  document.querySelectorAll("a.pagina-cassa").forEach((el) => {
+    let segno = el.querySelector(".bollo");
+    if (!vociCassa) { if (segno) segno.remove(); return; }
+    if (!segno) { segno = h("span", { class: "bollo rifiutato" }); el.append(segno); }
+    segno.textContent = vociCassa + " da sistemare";
+  });
+}
 let controlloInCorso = false;
 async function controllaPosta() {
   if (!ctx || !ctx.titolare || controlloInCorso || document.hidden) return;
@@ -261,6 +274,14 @@ async function controllaPosta() {
         "Apri Fatture", () => { location.hash = "#/fatture"; });
     }
     segnaFatture();
+    // Insieme alla posta, le chiusure di cassa: le nuove diventano vendite senza che nessuno apra niente.
+    const cassa = await cassaPagina.guardaCassa(ctx);
+    vociCassa = vociDaSistemare(await ctx.dati.chiusure(), await ctx.dati.collegamentiCassa()).length;
+    segnaCassa();
+    if (cassa.chiusure > 0 && mostrata !== "#/cassa") {
+      mostraAvviso("Arrivata la chiusura di cassa: vendite registrate" + (vociCassa ? ", " + vociCassa + " voci da sistemare" : ""),
+        vociCassa ? "Apri Cassa" : "Vedi", () => { location.hash = "#/cassa"; });
+    }
   } catch (e) { /* senza rete o altro: si riprova al prossimo giro */ } finally { controlloInCorso = false; }
 }
 setInterval(controllaPosta, 3 * 60000);

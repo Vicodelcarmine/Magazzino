@@ -312,7 +312,8 @@ export async function costi(ctx) {
     h("div", { class: "riquadri" },
       riquadro(pct(fc.totale.fc), "food cost sull'incassato"),
       riquadro(euro(fc.totale.ricavo), "incassato dai piatti"),
-      riquadro(euro(fc.totale.ricavo - fc.totale.costo), "margine sulla merce")),
+      riquadro(euro(fc.totale.ricavo - fc.totale.costo), "margine sulla merce"),
+      fc.incassoSenzaMerce > 0 ? riquadro(euro(fc.incassoSenzaMerce), "incassi senza merce (coperto e simili), fuori dal food cost") : null),
 
     h("h3", {}, "Prezzi aumentati", h("span", { class: "nota" }, " — fra le ultime due fatture dello stesso fornitore")),
     allerte.length ? h("ul", { class: "lista" }, allerte.map((a) =>

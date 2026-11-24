@@ -8,6 +8,7 @@ import { COPIATE, allineaTabella } from "./allinea.js";
 import { accoda, applica, inCoda, riapplica, spedisci } from "./coda.js";
 import * as carico from "./fatture/carico.js";
 import * as regoleOrdini from "./ordini.js";
+import * as cassa from "./cassa.js";
 
 export class ErroreDato extends Error {}
 
@@ -205,6 +206,7 @@ export function creaDati(archivioVero, ristoranteId, copia, spazio) {
     },
     salvaPiatto(input) {
       const dati = controlla(convalida.piatto(input));
+      if (dati.senza_merce) dati.stato = "attivo";
       return input.id ? modifica("piatti", input.id, dati) : creaConCodice("piatti", "piatto", dati);
     },
     archiviaPiatto(piatto, archiviato) {
@@ -214,7 +216,8 @@ export function creaDati(archivioVero, ristoranteId, copia, spazio) {
     // Il piatto è «attivo» quando ha almeno una riga di distinta, altrimenti «da completare».
     async allineaStato(piatto, righe) {
       if (piatto.stato === "archiviato") return piatto;
-      const giusto = convalida.righeAperte(righe).length ? "attivo" : "da_completare";
+      // Una voce senza merce è completa così: non le manca nessuna distinta.
+      const giusto = piatto.senza_merce || convalida.righeAperte(righe).length ? "attivo" : "da_completare";
       if (piatto.stato === giusto) return piatto;
       return modifica("piatti", piatto.id, { stato: giusto });
     },
@@ -444,6 +447,47 @@ export function creaDati(archivioVero, ristoranteId, copia, spazio) {
     },
     creaChiavePosta() { return archivioVero.funzione("crea_chiave_posta", { r: ristoranteId }); },
     spegniChiavePosta(id) { return archivioVero.modifica("chiavi_posta", { id: id, ristorante_id: ristoranteId }, { attiva: false }); },
+
+    // ----- chiusure di cassa (come la posta: si leggono dal vivo, solo il titolare) -----
+    async chiusure() {
+      try { return await archivioVero.leggi("chiusure_arrivate", qui, "nome_file.asc"); }
+      catch (e) { if (e.tipo === "rete") return []; throw e; }
+    },
+    async collegamentiCassa() { return (await tutta("collegamenti_piatto")).filter((c) => c.sistema === "cassa"); },
+    // Scrive nel registro le vendite di una chiusura che non ci sono ancora. Le voci senza piatto restano in attesa.
+    async registraChiusura(chiusura) {
+      let valori;
+      try { valori = JSON.parse(chiusura.valori || "[]"); } catch (e) { valori = null; }
+      const voci = valori ? cassa.leggiChiusura(valori) : [];
+      if (!voci.length || !cassa.quandoChiusura(chiusura.nome_file)) {
+        await archivioVero.modifica("chiusure_arrivate", { id: chiusura.id, ristorante_id: ristoranteId },
+          { stato: "scartata", nota: !voci.length ? "Nel foglio non trovo voci vendute." : "Dal nome del file non capisco giorno e ora della chiusura." });
+        return { vendite: 0, senzaPiatto: 0, scartata: true };
+      }
+      const [collegamenti, movimenti] = await Promise.all([tutta("collegamenti_piatto"), tutta("movimenti")]);
+      const piano = cassa.daRegistrare(chiusura, voci, collegamenti, movimenti, Object.assign({ autore_id: archivio.utente().id }, qui));
+      const righe = piano.vendite.map((v) => Object.assign({ id: nuovoId() }, v));
+      for (let i = 0; i < righe.length; i += 200) await archivio.inserisci("movimenti", righe.slice(i, i + 200));
+      if (chiusura.stato !== "registrata") {
+        await archivioVero.modifica("chiusure_arrivate", { id: chiusura.id, ristorante_id: ristoranteId }, { stato: "registrata", nota: "" });
+      }
+      return { vendite: righe.length, senzaPiatto: piano.senzaPiatto.length, scartata: false };
+    },
+    // Una voce di cassa è questo piatto. Da qui in poi (e per le chiusure già arrivate) le sue vendite contano.
+    async collegaVoceCassa(codice, piattoId) {
+      const r = await archivio.inserisci("collegamenti_piatto", Object.assign({ id: nuovoId(), piatto_id: piattoId,
+        sistema: "cassa", chiave: cassa.codiceCassa(codice) }, qui));
+      return r[0];
+    },
+    // Una voce di cassa nuova: nasce il piatto (con la distinta da fare, oppure senza merce) e si collega.
+    async creaPiattoDaVoce(voce, senzaMerce) {
+      const dati = controlla(convalida.piatto({ nome: voce.descrizione || "Voce di cassa " + voce.codice, categoria: senzaMerce ? "Senza merce" : "",
+        prezzo_listino: voce.quantita > 0 && voce.importo > 0 ? Math.round(voce.importo / voce.quantita * 100) / 100 : "", senza_merce: !!senzaMerce }));
+      if (dati.senza_merce) dati.stato = "attivo";
+      const piatto = await creaConCodice("piatti", "piatto", dati);
+      await api.collegaVoceCassa(voce.codice, piatto.id);
+      return piatto;
+    },
 
     // ----- ordini ai fornitori -----
     async ordini() {

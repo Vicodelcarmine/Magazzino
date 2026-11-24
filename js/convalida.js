@@ -62,7 +62,8 @@ export function piatto(input) {
   }
   return {
     ok: true,
-    dati: { nome: nome, categoria: pulisci(input.categoria), prezzo_listino: prezzo },
+    // senza_merce: una voce che si vende ma non consuma magazzino (coperto, acqua alla spina).
+    dati: { nome: nome, categoria: pulisci(input.categoria), prezzo_listino: prezzo, senza_merce: input.senza_merce === true },
   };
 }
 

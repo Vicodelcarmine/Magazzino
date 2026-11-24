@@ -44,7 +44,7 @@ export async function pagina(ctx, nomeArchivio, ridisegna) {
     h("h3", {}, "Come collegare la posta (una volta sola)"),
     h("p", { class: "nota avviso" }, "Questa pagina mostra il programma con dentro la chiave: resta visibile solo finché non esci da qui. Se la perdi, crei una chiave nuova."),
     h("ol", { class: "passi" },
-      h("li", {}, "Dal computer apri ", h("strong", {}, "script.google.com"), " entrando con l'account di posta del locale, e premi «Nuovo progetto». Dagli un nome, per esempio «Raccoglitore magazzino»."),
+      h("li", {}, "Dal computer apri ", h("strong", {}, "script.google.com"), " entrando con l'account di posta del locale. Se il progetto «Raccoglitore magazzino» c'è già, aprilo; altrimenti premi «Nuovo progetto» e chiamalo così."),
       h("li", {}, "A sinistra apri ", h("strong", {}, "Impostazioni progetto"), " (la rotella) e metti la spunta a «Mostra il file manifest appsscript.json nell'editor»."),
       h("li", {}, "Torna all'", h("strong", {}, "Editor"), ". Apri il file ", h("strong", {}, "appsscript.json"), ", cancella tutto e incolla questo:")),
     daCopiare("Permessi (appsscript.json)", manifesto()),
@@ -53,7 +53,7 @@ export async function pagina(ctx, nomeArchivio, ridisegna) {
     daCopiare("Programma (Codice.gs)", programma(url, archivio.chiave, appenaCreata)),
     h("ol", { class: "passi", start: "5" },
       h("li", {}, "Premi il dischetto per salvare. In alto, nel menu delle funzioni, scegli ", h("strong", {}, "installa"), " e premi ", h("strong", {}, "Esegui"), "."),
-      h("li", {}, "Google chiede il permesso: scegli l'account, poi «Avanzate» → «Vai a … (non sicuro)» → «Consenti». L'avviso è normale per un programma fatto in casa. Il permesso richiesto è di sola lettura della posta."),
+      h("li", {}, "Google chiede il permesso: scegli l'account, poi «Avanzate» → «Vai a … (non sicuro)» → «Consenti». L'avviso è normale per un programma fatto in casa. I permessi richiesti sono di sola lettura: posta, Drive e fogli."),
       h("li", {}, "Fatto. Torna qui e riapri questa pagina: dopo il primo giro leggerai «collegata», e in Fatture compariranno le fatture arrivate."))) : null;
 
   const scartate = arrivi.filter((p) => p.stato === "scartata");
@@ -67,7 +67,7 @@ export async function pagina(ctx, nomeArchivio, ridisegna) {
 
   return h("section", {},
     h("div", { class: "testata" }, h("h2", {}, "Fatture dalla posta")),
-    h("p", { class: "nota" }, "Un piccolo programma dentro l'account di posta del locale guarda le email ogni quarto d'ora, in sola lettura, e consegna qui gli allegati PDF e XML. Le fatture riconosciute compaiono in Fatture come «arrivate, da caricare»."),
+    h("p", { class: "nota" }, "Un piccolo programma dentro l'account Google del locale lavora ogni quarto d'ora, in sola lettura: guarda le email e consegna qui gli allegati PDF e XML, e legge da Drive i fogli «STAMPA ARTICOLI» della cassa. Le fatture riconosciute compaiono in Fatture come «arrivate, da caricare»; le chiusure diventano vendite, in Cassa."),
     stato, errore,
     h("div", { class: "azioni" },
       chiave ? conConferma("Crea una chiave nuova (la vecchia smette di funzionare)", "Sì, crea la chiave nuova", crea)

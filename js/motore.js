@@ -372,8 +372,14 @@ export function foodCost(c) {
       listino: listino, incasso: incasso, fcListino: listino ? reale / listino : null,
       fcIncasso: incasso > 0 ? reale / incasso : null, margine: incasso > 0 ? incasso - reale : (listino ? listino - reale : null),
       venduti: venduti, vendutiConPrezzo: conPrezzo, ricavo: ricavo, righe: righe, mancanoPrezzi: mancano,
+      senzaMerce: p.senza_merce === true || p.senza_merce === 1,
     });
   });
+  // Coperto, acqua alla spina e simili: incasso vero, ma nessuna merce. Stanno a parte, per non far sembrare
+  // il food cost più basso di quello che è sui piatti veri.
+  const senzaMerce = piatti.filter((p) => p.senzaMerce);
+  const incassoSenzaMerce = senzaMerce.reduce((s, p) => s + p.ricavo, 0);
+  for (let i = piatti.length - 1; i >= 0; i -= 1) if (piatti[i].senzaMerce) piatti.splice(i, 1);
   piatti.sort((a, b) => (b.fcIncasso == null ? -1 : b.fcIncasso) - (a.fcIncasso == null ? -1 : a.fcIncasso));
   const cat = new Map();
   piatti.forEach((p) => {
@@ -387,7 +393,8 @@ export function foodCost(c) {
   const categorie = Array.from(cat.values()).map((k) => Object.assign(k, { fc: k.ricavo > 0 ? k.costo / k.ricavo : null }))
     .sort((a, b) => a.categoria.localeCompare(b.categoria, "it"));
   const costo = categorie.reduce((s, k) => s + k.costo, 0), ricavo = categorie.reduce((s, k) => s + k.ricavo, 0);
-  return { piatti: piatti, categorie: categorie, totale: { costo: costo, ricavo: ricavo, fc: ricavo > 0 ? costo / ricavo : null } };
+  return { piatti: piatti, categorie: categorie, senzaMerce: senzaMerce, incassoSenzaMerce: incassoSenzaMerce,
+    totale: { costo: costo, ricavo: ricavo, fc: ricavo > 0 ? costo / ricavo : null } };
 }
 
 // ----- allerta: un fornitore ha alzato il prezzo fra le ultime due fatture -----

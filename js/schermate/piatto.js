@@ -24,13 +24,14 @@ export async function scheda(ctx, id, ridisegna) {
   return h("section", { class: "tipo-piatto" },
     h("div", { class: "testata" },
       h("h2", {}, piatto.nome, " ", segnoCodice("piatto", piatto.codice), " ", segnoCategoria("piatto", piatto.categoria)),
-      h("span", { class: "bollo " + piatto.stato }, STATI[piatto.stato])),
+      h("span", { class: "bollo " + piatto.stato }, piatto.senza_merce && !archiviato ? "senza merce" : STATI[piatto.stato])),
 
+    piatto.senza_merce ? h("p", { class: "nota" }, "Voce senza merce: le sue vendite contano come incasso, ma non scalano niente dal magazzino. Non ha bisogno di distinta base. Si cambia qui sotto, in «Nome, categoria e prezzo».") : [
     h("h3", {}, "Distinta base", h("span", { class: "nota" }, " — gli articoli di magazzino che servono per una porzione")),
     distinta(ctx, {
       righe: righe, articoli: articoli, chiave: { piatto_id: id }, scala: 1,
       perCosa: "una porzione", modificabile: ctx.titolare && !archiviato, ridisegna: ridisegna,
-    }),
+    })],
 
     ctx.titolare ? h("details", {},
       h("summary", {}, "Nome, categoria e prezzo"),

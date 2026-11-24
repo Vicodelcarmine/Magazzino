@@ -18,7 +18,7 @@ const PREDEFINITI = {
   ordini: { stato: "aperto", attesa_entro: null, fattura_id: null, righe: "[]", nota: "" },
   articoli: { categoria: "", tipo: "ricetta", qta_confezione: 0, acquisto_sfuso: false, prodotto_in_cucina: false,
     consumo_stimato: null, giorni_copertura: null, lotto_abituale: null, attivo: true },
-  piatti: { categoria: "", prezzo_listino: null, stato: "da_completare" },
+  piatti: { categoria: "", prezzo_listino: null, stato: "da_completare", senza_merce: false },
   collegamenti_piatto: {},
   righe_ricetta: { piatto_id: null, preparazione_id: null, valida_al: null },
   prezzi: { qta_confezione: 0, valido_fino: null, origine: "", annullato_il: null },
