@@ -14,7 +14,8 @@
 
 // Quello che l'archivio mette da solo su una riga nuova: qui serve per mostrarla subito a schermo.
 const PREDEFINITI = {
-  fornitori: { note: "", attivo: true },
+  fornitori: { note: "", attivo: true, giorni_fattura: null },
+  ordini: { stato: "aperto", attesa_entro: null, fattura_id: null, righe: "[]", nota: "" },
   articoli: { categoria: "", tipo: "ricetta", qta_confezione: 0, acquisto_sfuso: false, prodotto_in_cucina: false,
     consumo_stimato: null, giorni_copertura: null, lotto_abituale: null, attivo: true },
   piatti: { categoria: "", prezzo_listino: null, stato: "da_completare" },
@@ -30,7 +31,8 @@ const PREDEFINITI = {
 const DATE = { fornitori: ["creato_il", "aggiornato_il"], articoli: ["creato_il", "aggiornato_il"],
   piatti: ["creato_il", "aggiornato_il"], collegamenti_piatto: ["creato_il"], prezzi: ["creato_il"],
   righe_ricetta: ["valida_dal", "creato_il"], movimenti: ["registrato_il"],
-  abbinamenti_fornitore: ["creato_il", "aggiornato_il"], fatture: ["creato_il", "aggiornato_il"] };
+  abbinamenti_fornitore: ["creato_il", "aggiornato_il"], fatture: ["creato_il", "aggiornato_il"],
+  ordini: ["creato_il", "aggiornato_il"] };
 
 export function conPredefiniti(tabella, riga, quando) {
   const out = Object.assign({}, PREDEFINITI[tabella] || {}, riga);
@@ -128,6 +130,6 @@ export function descrivi(op) {
     return (nomi[r.tipo] || "Movimento") + (r.quantita != null ? " (" + Math.abs(r.quantita) + ")" : "");
   }
   const cosa = { articoli: "articolo", piatti: "piatto", fornitori: "fornitore", righe_ricetta: "riga di ricetta", prezzi: "prezzo", collegamenti_piatto: "codice di cassa",
-    abbinamenti_fornitore: "codice di un fornitore", fatture: "fattura" }[op.tabella] || op.tabella;
+    abbinamenti_fornitore: "codice di un fornitore", fatture: "fattura", ordini: "ordine" }[op.tabella] || op.tabella;
   return (op.tipo === "inserisci" ? "Nuovo " : "Modifica a ") + cosa + (r.nome ? " «" + r.nome + "»" : "");
 }

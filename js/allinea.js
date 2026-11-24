@@ -5,7 +5,7 @@
 // Nell'archivio niente si cancella mai, quindi «ciò che viene dopo» è davvero tutto ciò che manca.
 
 // Le tabelle che si tengono in copia (ristoranti e appartenenze sono poche righe: si leggono sempre dal vivo).
-export const COPIATE = ["fornitori", "articoli", "piatti", "collegamenti_piatto", "righe_ricetta", "prezzi", "movimenti", "abbinamenti_fornitore", "fatture"];
+export const COPIATE = ["fornitori", "articoli", "piatti", "collegamenti_piatto", "righe_ricetta", "prezzi", "movimenti", "abbinamenti_fornitore", "fatture", "ordini"];
 
 // Due scritture quasi contemporanee possono arrivare nell'archivio in ordine diverso dai loro numeri:
 // per non perdere quella «rimasta indietro» si richiede ogni volta anche un po' di ciò che si ha già

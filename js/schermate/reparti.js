@@ -34,6 +34,7 @@ const ricordo = new Map();
 //  valore    (facoltativo) (voci del reparto) → testo da mostrare sul reparto (es. il totale in euro)
 //  filtri    (facoltativo) [[chiave, testo del tasto, (voce) → vero se resta]]
 //  ordina    (facoltativo) (a, b) → ordine delle voci dentro un reparto e nella ricerca
+//  testa     (facoltativo) (nome del reparto, voci) → qualcosa da mettere in cima al reparto aperto (es. un tasto)
 //  cerca     testo del riquadro di ricerca
 //  vuoto     testo quando non c'è niente
 export function reparti(opz) {
@@ -91,6 +92,7 @@ export function reparti(opz) {
         const d = h("details", { class: "tendina reparto", open: aperto === g.chiave },
           h("summary", {}, h("span", { class: "icona" }, g.icona), h("strong", {}, g.nome), segni(g)),
           // Le righe si costruiscono solo per il reparto aperto: la pagina resta leggera.
+          aperto === g.chiave && opz.testa ? opz.testa(g.nome, g.voci) : null,
           aperto === g.chiave ? h("ul", { class: "lista" }, g.voci.map(opz.riga)) : null);
         d.addEventListener("toggle", () => {
           if (d.open && aperto !== g.chiave) { scegli(g.chiave); disegna(); }

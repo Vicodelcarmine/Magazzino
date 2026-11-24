@@ -7,6 +7,7 @@ import * as metro from "../fatture/metro.js";
 import { leggiTesto } from "../fatture/pdf.js";
 import * as xml from "../fatture/xml.js";
 import * as carico from "../fatture/carico.js";
+import { inRitardo } from "../ordini.js";
 import { sceltaArticolo } from "./scegli.js";
 import { tipoDi, etichettaArticolo } from "./segni.js";
 
@@ -76,8 +77,9 @@ async function apri(ctx, file) {
 
 // ---------- elenco ----------
 export async function elenco(ctx) {
-  const [fatture, fornitori] = await Promise.all([ctx.dati.fatture(), ctx.dati.fornitori()]);
+  const [fatture, fornitori, ordini] = await Promise.all([ctx.dati.fatture(), ctx.dati.fornitori(), ctx.dati.ordini()]);
   const nomi = new Map(fornitori.map((f) => [f.id, f.nome]));
+  const inRitardoOra = ordini.filter((o) => inRitardo(o, Date.now()));
   const stato = h("p", { class: "nota", role: "status" });
   const errore = h("p", { class: "errore", role: "alert" });
   const scegliFile = h("input", { type: "file", accept: "application/pdf,.pdf,.xml,text/xml,application/xml", hidden: true, onchange: async (ev) => {
@@ -102,6 +104,9 @@ export async function elenco(ctx) {
     ctx.titolare ? h("p", { class: "nota" }, "Metro: il PDF della fattura. Tutti gli altri fornitori: il file XML della fattura elettronica.") : null,
     bozza ? h("p", { class: "nota avviso" }, "Stavi rivedendo la fattura " + bozza.testata.numero + ": ",
       h("a", { href: "#/fatture/rivedi" }, "riprendila da dove eri")) : null,
+    inRitardoOra.length ? h("p", { class: "errore" }, "Fatture attese e non arrivate: ",
+      inRitardoOra.map((o, i) => [i ? ", " : "", h("a", { href: "#/ordini/" + o.id }, nomi.get(o.fornitore_id) || "fornitore")]),
+      ". Avevi fatto l'ordine e il termine è passato.") : null,
     daCaricare.length ? h("p", { class: "nota avviso" }, daCaricare.length === 1 ? "C'è una fattura arrivata e non ancora caricata."
       : "Ci sono " + daCaricare.length + " fatture arrivate e non ancora caricate.") : null,
     fatture.length ? perAnni(fatture, nomi) : vuoto("Ancora nessuna fattura. Carica la prima col tasto qui sopra."));

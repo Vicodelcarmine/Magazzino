@@ -24,6 +24,9 @@ export async function scheda(ctx, id) {
       campo("Nome", h("input", { name: "nome", value: f.nome || "", required: true, autocomplete: "off" })),
       campo("Note", h("input", { name: "note", value: f.note || "", autocomplete: "off" }),
         "Per esempio: giorno di consegna, telefono dell'agente."),
+      campo("Dopo un ordine, la fattura arriva entro (giorni lavorativi)", h("input", { name: "giorni_fattura", inputmode: "numeric", autocomplete: "off",
+        value: f.giorni_fattura == null ? "" : String(f.giorni_fattura), placeholder: "2" }),
+        "Vuoto = 2 giorni (ordine di giovedì, fattura entro lunedì). 0 = non aspettarla: per chi la manda subito, come Metro, o fattura a fine mese."),
       spunta("attivo", "Fornitore attivo", f.attivo),
     ], "Salva", async (d) => {
       await ctx.dati.salvaFornitore(Object.assign({ id: f.id }, d), fornitori);

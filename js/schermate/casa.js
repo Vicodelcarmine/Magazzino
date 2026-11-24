@@ -2,11 +2,13 @@
 // e ci si torna da ovunque col tasto della casina accanto a «Indietro».
 import { h } from "../dom.js";
 import * as motore from "../motore.js";
+import { inRitardo } from "../ordini.js";
 
 const LAVORO = [
   ["magazzino", "📦", "Magazzino", "quanta merce c'è"],
   ["fatture", "🧾", "Fatture", "la merce che arriva"],
   ["spesa", "🛒", "Spesa", "cosa ordinare"],
+  ["ordini", "📝", "Ordini", "inviati, in attesa di fattura"],
   ["costi", "💶", "Costi", "food cost e margini"],
   ["andamento", "📈", "Andamento", "grafici e sprechi"],
 ];
@@ -28,11 +30,15 @@ export async function pagina(ctx) {
     if (daOrdinare) segni.spesa = ["da_completare", daOrdinare + " da ordinare"];
     const daCaricare = (await ctx.dati.fatture()).filter((f) => f.stato === "da_caricare").length;
     if (daCaricare) segni.fatture = ["da_completare", daCaricare + " da caricare"];
-    const senzaDistinta = c.piatti.filter((p) => p.stato === "da_completare").length;
+    const ordini = (await ctx.dati.ordini()).filter((o) => o.stato === "aperto");
+    const ritardi = ordini.filter((o) => inRitardo(o, Date.now())).length;
+    if (ritardi) segni.ordini = ["rifiutato", ritardi === 1 ? "1 fattura in ritardo" : ritardi + " fatture in ritardo"];
+    else if (ordini.length) segni.ordini = ["da_completare", ordini.length + " in attesa"];
+    const senzaDistinta = Array.from(c.piatti.values()).filter((p) => p.stato === "da_completare").length;
     if (senzaDistinta) segni.piatti = ["da_completare", senzaDistinta + " senza distinta"];
   } catch (e) { /* i riquadri restano senza numeri */ }
 
-  const riquadro = (v) => h("a", { class: "reparto-icona pagina-" + v[0], href: "#/" + v[0] },
+  const riquadro = (v) => h("a", { class: "reparto-icona pagina-" + v[0] + (segni[v[0]] && segni[v[0]][0] === "rifiutato" && v[0] === "ordini" ? " allarme" : ""), href: "#/" + v[0] },
     h("span", { class: "icona" }, v[1]), h("strong", {}, v[2]), h("span", { class: "nota" }, v[3]),
     segni[v[0]] ? h("span", { class: "bollo " + segni[v[0]][0] }, segni[v[0]][1]) : null);
   return h("section", { class: "casa" },

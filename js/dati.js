@@ -7,6 +7,7 @@ import { datiEsempio, ORDINE_ESEMPIO } from "./demo.js";
 import { COPIATE, allineaTabella } from "./allinea.js";
 import { accoda, applica, inCoda, riapplica, spedisci } from "./coda.js";
 import * as carico from "./fatture/carico.js";
+import * as regoleOrdini from "./ordini.js";
 
 export class ErroreDato extends Error {}
 
@@ -385,7 +386,13 @@ export function creaDati(archivioVero, ristoranteId, copia, spazio) {
       if (piano.movimenti.length) await archivio.inserisci("movimenti", piano.movimenti);
       if (piano.prezzi.length) await archivio.inserisci("prezzi", piano.prezzi);
       await modifica("fatture", id, { stato: "caricata" });
-      return { id: id, caricate: piano.movimenti.length };
+      // Se c'era un ordine che aspettava la fattura di questo fornitore, ora non aspetta più.
+      let ordine = null;
+      try {
+        ordine = regoleOrdini.ordinePerFattura(await tutta("ordini"), testata.fornitore_id, gia ? gia.data : testata.data);
+        if (ordine) await modifica("ordini", ordine.id, { stato: "chiuso", fattura_id: id });
+      } catch (e) { ordine = null; } // la fattura è caricata comunque; l'ordine si chiude a mano
+      return { id: id, caricate: piano.movimenti.length, ordine: ordine ? ordine.id : null };
     },
     // Annulla il carico di una fattura: ogni suo movimento viene annullato (non cancellato) e i
     // prezzi che aveva portato escono dal confronto. La fattura resta in elenco, segnata «annullata».
@@ -403,6 +410,28 @@ export function creaDati(archivioVero, ristoranteId, copia, spazio) {
       await modifica("fatture", fattura.id, { stato: "annullata" });
       return vivi.length;
     },
+
+    // ----- ordini ai fornitori -----
+    async ordini() {
+      return (await tutta("ordini")).slice().sort((x, y) => String(y.inviato_il).localeCompare(String(x.inviato_il)));
+    },
+    // righe: [{ articolo_id, nome, udm, quantita, colli, qtaConfezione }]. Da qui il programma aspetta la fattura.
+    async creaOrdine(fornitore, righe, nota) {
+      const buone = (righe || []).filter((r) => r.articolo_id && Number(r.quantita) > 0);
+      if (!fornitore || !fornitore.id) throw new ErroreDato("Manca il fornitore dell'ordine.");
+      if (!buone.length) throw new ErroreDato("Nell'ordine non c'è niente: scrivi almeno una quantità.");
+      const adesso = new Date();
+      const r = await archivio.inserisci("ordini", Object.assign({ id: nuovoId(), fornitore_id: fornitore.id, stato: "aperto",
+        inviato_il: adesso.toISOString(), attesa_entro: regoleOrdini.scadenza(adesso, regoleOrdini.giorniDi(fornitore)),
+        righe: JSON.stringify(buone.map((x) => ({ articolo_id: x.articolo_id, nome: x.nome, udm: x.udm,
+          quantita: Math.round(Number(x.quantita) * 1e4) / 1e4, colli: x.colli == null ? null : Number(x.colli),
+          qtaConfezione: x.qtaConfezione ? Number(x.qtaConfezione) : null }))),
+        nota: String(nota || "").trim() }, qui));
+      return r[0];
+    },
+    chiudiOrdine(ordine) { return modifica("ordini", ordine.id, { stato: "chiuso" }); },
+    annullaOrdine(ordine) { return modifica("ordini", ordine.id, { stato: "annullato" }); },
+    riapriOrdine(ordine) { return modifica("ordini", ordine.id, { stato: "aperto", fattura_id: null }); },
 
     // Tutto ciò che serve al motore dei conti, in una volta.
     async perIConti(impostazioni) {

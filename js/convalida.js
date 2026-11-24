@@ -21,7 +21,13 @@ export function fornitore(input, esistenti) {
   const nome = pulisci(input.nome);
   if (!nome) return no("Scrivi il nome del fornitore.");
   if (doppio(esistenti, "nome", nome, input.id)) return no("C'è già un fornitore con questo nome.");
-  return { ok: true, dati: { nome: nome, note: pulisci(input.note), attivo: input.attivo !== false } };
+  // Giorni lavorativi entro cui arriva la sua fattura dopo un ordine: vuoto = termine generale, 0 = non si aspetta.
+  let giorni = null;
+  if (input.giorni_fattura != null && String(input.giorni_fattura).trim() !== "") {
+    giorni = Number(String(input.giorni_fattura).trim());
+    if (!Number.isInteger(giorni) || giorni < 0 || giorni > 60) return no("I giorni di attesa della fattura sono un numero intero fra 0 e 60.");
+  }
+  return { ok: true, dati: { nome: nome, note: pulisci(input.note), attivo: input.attivo !== false, giorni_fattura: giorni } };
 }
 
 // I codici non passano di qui: li assegna il sistema (codici.js, dati.js).

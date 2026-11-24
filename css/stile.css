@@ -291,3 +291,8 @@ a.reparto-icona:hover { border-color: var(--testo); }
 a.reparto-icona .icona { font-size: 2.4rem; }
 a.reparto-icona strong { font-size: 1.05rem; }
 .casa h3 { margin: 1.4rem 0 0; }
+
+/* ---------- Ordini ---------- */
+.testa-reparto { margin: 0 .6rem .6rem; }
+pre.messaggio { white-space: pre-wrap; background: var(--campo); border: 1px solid var(--bordo); border-radius: var(--raggio); padding: .8rem; font: inherit; font-size: .9rem; user-select: all; }
+a.reparto-icona.allarme { border-color: var(--allarme); }

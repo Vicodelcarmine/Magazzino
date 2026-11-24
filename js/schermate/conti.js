@@ -147,7 +147,7 @@ export async function spesa(ctx) {
     ? r.colli + (r.colli === 1 ? " confezione" : " confezioni") + " da " + qta(r.qtaConfezione) + " " + r.udm
     : qta(r.quantita) + " " + r.udm);
   return h("section", {},
-    h("div", { class: "testata" }, h("h2", {}, "Spesa")),
+    h("div", { class: "testata" }, h("h2", {}, "Spesa"), h("a", { class: "pulsante", href: "#/ordini" }, "Ordini inviati")),
     aggiornamento(c),
     h("p", { class: "nota" }, "Quanto serve per i prossimi " + c.opz.giorniCopertura + " giorni, in base alle vendite degli ultimi "
       + c.opz.giorniStorico + ", alle ricette e allo sfrido, tolto quello che c'è in magazzino."),
@@ -158,6 +158,11 @@ export async function spesa(ctx) {
     sp.righe.length ? reparti({
       voci: sp.gruppi.flatMap((g) => g.righe.map((r) => Object.assign({ fornitoreSpesa: g.fornitore }, r))),
       gruppoDi: (r) => r.fornitoreSpesa, icona: "🚚", memoria: "spesa", unita: ["articolo", "articoli"],
+      // In cima a ogni fornitore: da qui si prepara il suo ordine con queste quantità.
+      testa: (nome) => {
+        const f = Array.from(c.fornitori.values()).find((x) => x.nome === nome);
+        return f ? h("p", { class: "testa-reparto" }, h("a", { class: "pulsante primario", href: "#/ordine-nuovo/" + f.id }, "Prepara l'ordine a " + nome)) : null;
+      },
       valore: (righe) => euro(righe.reduce((s, r) => s + (r.costo || 0), 0)) + (righe.some((r) => r.costo == null) ? " +" : ""),
       allarme: (r) => r.costo == null, etichettaAllarme: (n) => n + " senza prezzo",
       cerca: "Cerca un articolo da ordinare",
