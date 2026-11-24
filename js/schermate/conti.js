@@ -225,6 +225,9 @@ export async function spesaUnica(ctx, ridisegna) {
       const conto = reparto.querySelector("summary .numero");
       if (conto) conto.textContent = fatte + " di " + tutte + " presi";
       // Un reparto finito scende in fondo, sotto quelli dove c'è ancora da prendere.
+      // Si sposta SOLO quando cambia stato: finché manca qualcosa il reparto resta dov'è.
+      const eraFinito = reparto.classList.contains("finito");
+      if (eraFinito === (fatte === tutte)) return;
       reparto.classList.toggle("finito", fatte === tutte);
       const tendine = reparto.parentNode;
       if (fatte === tutte) tendine.append(reparto);
