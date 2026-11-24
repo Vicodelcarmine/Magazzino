@@ -35,6 +35,8 @@ const ricordo = new Map();
 //  filtri    (facoltativo) [[chiave, testo del tasto, (voce) → vero se resta]]
 //  ordina    (facoltativo) (a, b) → ordine delle voci dentro un reparto e nella ricerca
 //  testa     (facoltativo) (nome del reparto, voci) → qualcosa da mettere in cima al reparto aperto (es. un tasto)
+//  ordinaGruppi (facoltativo) (a, b) → ordine dei reparti (a.voci sono le voci del reparto)
+//  classeGruppo (facoltativo) (voci del reparto) → classe in più sul reparto (es. «finito»)
 //  cerca     testo del riquadro di ricerca
 //  vuoto     testo quando non c'è niente
 export function reparti(opz) {
@@ -61,6 +63,7 @@ export function reparti(opz) {
       g.allarmi = opz.allarme ? g.voci.filter(opz.allarme).length : 0;
       g.icona = opz.icona || iconaDi(g.nome);
     });
+    if (opz.ordinaGruppi) out.sort(opz.ordinaGruppi);
     return { voci: voci, gruppi: out };
   }
   const segni = (g) => [
@@ -81,7 +84,7 @@ export function reparti(opz) {
     // "" = si vedono le icone; "-" = si è dentro, con tutte le tendine chiuse.
     if (aperto !== "-" && !stato.gruppi.some((g) => g.chiave === aperto)) {
       corpo.replaceChildren(h("div", { class: "griglia-reparti" }, stato.gruppi.map((g) =>
-        h("button", { type: "button", class: "reparto-icona" + (g.allarmi ? " allarme" : ""),
+        h("button", { type: "button", class: "reparto-icona" + (g.allarmi ? " allarme" : "") + (opz.classeGruppo ? " " + opz.classeGruppo(g.voci) : ""),
           onclick: () => { scegli(g.chiave); disegna(); corpo.scrollIntoView({ block: "start" }); } },
           h("span", { class: "icona" }, g.icona), h("strong", {}, g.nome), segni(g)))));
       return;
@@ -89,7 +92,7 @@ export function reparti(opz) {
     corpo.replaceChildren(
       h("button", { type: "button", class: "leggero", onclick: () => { scegli(""); disegna(); } }, "‹ Tutti i reparti"),
       h("div", { class: "tendine" }, stato.gruppi.map((g) => {
-        const d = h("details", { class: "tendina reparto", open: aperto === g.chiave },
+        const d = h("details", { class: "tendina reparto" + (opz.classeGruppo ? " " + opz.classeGruppo(g.voci) : ""), open: aperto === g.chiave },
           h("summary", {}, h("span", { class: "icona" }, g.icona), h("strong", {}, g.nome), segni(g)),
           // Le righe si costruiscono solo per il reparto aperto: la pagina resta leggera.
           aperto === g.chiave && opz.testa ? opz.testa(g.nome, g.voci) : null,

@@ -309,3 +309,5 @@ label.riga-spesa { cursor: pointer; align-items: center; }
 label.riga-spesa input[type="checkbox"] { width: 1.7rem; height: 1.7rem; flex: none; }
 label.riga-spesa.presa { opacity: .55; }
 label.riga-spesa.presa strong { text-decoration: line-through; }
+details.tendina.reparto.finito > summary { opacity: .6; }
+button.reparto-icona.finito { opacity: .55; }

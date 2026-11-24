@@ -210,9 +210,28 @@ export async function spesaUnica(ctx, ridisegna) {
       ricorda();
       li.firstChild.classList.toggle("presa", spunta.checked);
       quantiPresi.textContent = String(presi.size);
+      // La riga presa scende in fondo al suo reparto; se la si rimette, torna su fra quelle da prendere.
+      const elenco = li.parentNode;
+      const primaPresa = Array.from(elenco.children).find((x) => x !== li && x.querySelector("input:checked"));
+      if (spunta.checked || !primaPresa) elenco.append(li); else elenco.insertBefore(li, primaPresa);
+      if (!spunta.checked) { // fra quelle da prendere, al suo posto in ordine di nome
+        const dopo = Array.from(elenco.children).find((x) => x !== li && !x.querySelector("input:checked")
+          && x.querySelector("strong").textContent.localeCompare(r.nome, "it") > 0);
+        if (dopo) elenco.insertBefore(li, dopo);
+      }
       const reparto = li.closest("details");
-      const conto = reparto && reparto.querySelector("summary .numero");
-      if (conto) conto.textContent = reparto.querySelectorAll("input:checked").length + " di " + reparto.querySelectorAll("input[type=checkbox]").length + " presi";
+      if (!reparto) return;
+      const fatte = reparto.querySelectorAll("input:checked").length, tutte = reparto.querySelectorAll("input[type=checkbox]").length;
+      const conto = reparto.querySelector("summary .numero");
+      if (conto) conto.textContent = fatte + " di " + tutte + " presi";
+      // Un reparto finito scende in fondo, sotto quelli dove c'è ancora da prendere.
+      reparto.classList.toggle("finito", fatte === tutte);
+      const tendine = reparto.parentNode;
+      if (fatte === tutte) tendine.append(reparto);
+      else {
+        const primoFinito = Array.from(tendine.children).find((x) => x !== reparto && x.classList.contains("finito"));
+        if (primoFinito) tendine.insertBefore(reparto, primoFinito);
+      }
     });
     return li;
   };
@@ -228,6 +247,10 @@ export async function spesaUnica(ctx, ridisegna) {
       riquadro(euro(sp.totale) + (sp.parziale ? " +" : ""), "spesa prevista")),
     sp.righe.length ? reparti({ voci: sp.righe, riga: riga, memoria: "spesa-unica", unita: ["articolo", "articoli"],
       valore: contaReparto, filtri: [["mancano", "Solo quelli ancora da prendere", (r) => !presi.has(r.id)]],
+      // Ciò che è già preso sta in fondo: prima le righe da prendere, e prima i reparti dove manca ancora qualcosa.
+      ordina: (x, y) => presi.has(x.id) - presi.has(y.id) || x.nome.localeCompare(y.nome, "it"),
+      classeGruppo: (voci) => (voci.every((r) => presi.has(r.id)) ? "finito" : ""),
+      ordinaGruppi: (x, y) => x.voci.every((r) => presi.has(r.id)) - y.voci.every((r) => presi.has(r.id)),
       cerca: "Cerca un articolo nella lista" })
       : vuoto("Niente da comprare: quello che c'è in magazzino copre i prossimi giorni."),
     presi.size ? h("div", { class: "azioni" }, conConferma("Togli tutte le spunte", "Sì, ricomincia da capo", () => { presi.clear(); ricorda(); ridisegna(); })) : null);
