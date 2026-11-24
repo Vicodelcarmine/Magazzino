@@ -280,3 +280,14 @@ button.reparto-icona .icona { font-size: 2.4rem; }
 button.reparto-icona .numero { margin-left: 0; }
 button.reparto-icona.allarme { border-color: var(--allarme); }
 .tipo-piatto button.reparto-icona.allarme { border-color: var(--giallo); }
+
+/* ---------- Home e tasto della casina ---------- */
+.barra-indietro { display: flex; gap: .5rem; align-items: center; }
+a.casina { font-size: 1.25rem; line-height: 1; padding: .45rem .8rem; }
+a.casina.qui { border-color: var(--accento); }
+a.reparto-icona { display: grid; justify-items: center; align-content: start; gap: .25rem; text-align: center; padding: 1rem .5rem; min-height: 8.2rem;
+  background: var(--carta); border: 2px solid var(--bordo-tasto); border-radius: var(--raggio); color: var(--testo); text-decoration: none; }
+a.reparto-icona:hover { border-color: var(--testo); }
+a.reparto-icona .icona { font-size: 2.4rem; }
+a.reparto-icona strong { font-size: 1.05rem; }
+.casa h3 { margin: 1.4rem 0 0; }

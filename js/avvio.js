@@ -17,6 +17,7 @@ import * as andamento from "./schermate/andamento.js";
 import * as trasloco from "./schermate/trasloco.js";
 import * as attesa from "./schermate/attesa.js";
 import * as fatture from "./schermate/fatture.js";
+import * as casa from "./schermate/casa.js";
 
 const radice = document.getElementById("app");
 // Quale archivio: quello scelto alla schermata di accesso, altrimenti il predefinito.
@@ -125,7 +126,7 @@ async function parti() {
 }
 
 // Il menu principale; «Anagrafica» apre altre quattro voci.
-const CASA = "#/magazzino";
+const CASA = "#/casa";
 const VOCI = [["magazzino", "Magazzino"], ["fatture", "Fatture"], ["spesa", "Spesa"], ["costi", "Costi"], ["andamento", "Andamento"], ["piatti", "Anagrafica"]];
 const ANAGRAFICA = [["piatti", "Piatti"], ["preparazioni", "Preparazioni"], ["articoli", "Articoli"], ["fornitori", "Fornitori"]];
 const inAnagrafica = (sezione) => ANAGRAFICA.some((v) => v[0] === sezione);
@@ -138,7 +139,9 @@ function cornice(sezione, contenuto) {
     // Spento solo se non c'è dove tornare.
     h("div", { class: "barra-indietro" },
       h("button", { class: "indietro", disabled: dietro == null, "aria-label": "Torna alla pagina precedente",
-        onclick: () => { const dove = storia.indietro(qui); if (dove) location.hash = dove; } }, "‹ Indietro")),
+        onclick: () => { const dove = storia.indietro(qui); if (dove) location.hash = dove; } }, "‹ Indietro"),
+      // La casina: da qualunque pagina, dritti alla Home.
+      h("a", { class: "pulsante casina" + (sezione === "casa" ? " qui" : ""), href: CASA, "aria-label": "Vai alla Home", title: "Home" }, "🏠")),
     h("header", {},
       h("div", { class: "locale" },
         h("strong", {}, ctx.ristorante.nome),
@@ -197,7 +200,8 @@ async function naviga() {
   const [, sezione, id] = (location.hash || CASA).split("/");
   try {
     let vista;
-    if (sezione === "magazzino") vista = id ? await conti.articolo(ctx, id, naviga) : await conti.magazzino(ctx);
+    if (sezione === "casa") vista = await casa.pagina(ctx);
+    else if (sezione === "magazzino") vista = id ? await conti.articolo(ctx, id, naviga) : await conti.magazzino(ctx);
     else if (sezione === "spesa") vista = await conti.spesa(ctx);
     else if (sezione === "costi") vista = await conti.costi(ctx);
     else if (sezione === "andamento") vista = await andamento.pagina(ctx);
