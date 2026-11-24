@@ -20,6 +20,7 @@ import * as fatture from "./schermate/fatture.js";
 import * as casa from "./schermate/casa.js";
 import * as ordini from "./schermate/ordini.js";
 import * as posta from "./schermate/posta.js";
+import { preparaSuono, suona, mostraAvviso } from "./avviso.js";
 
 const radice = document.getElementById("app");
 // Quale archivio: quello scelto alla schermata di accesso, altrimenti il predefinito.
@@ -124,6 +125,7 @@ async function parti() {
       dati: creaDati(archivio, scelto.id, await copiaLocale(), spazioDi(scelto.id)),
     };
     await naviga();
+    controllaPosta(); // subito all'apertura, poi ogni tre minuti
   } catch (e) { guasto(e); }
 }
 
@@ -224,12 +226,46 @@ async function naviga() {
     else vista = vuoto("Pagina non trovata.");
     if (mio === giro) {
       mostra(cornice(sezione, vista));
+      if (sezione === "fatture" || sezione === "posta") nuoveFatture = 0; // viste: il tasto smette di lampeggiare
+      segnaFatture();
       // Una pagina nuova si apre dall'inizio; una pagina solo ridisegnata resta dov'era.
       if (cambiata) window.scrollTo(0, 0);
       mostrata = location.hash || CASA;
     }
   } catch (e) { if (mio === giro) guasto(e); }
 }
+
+// ----- fatture arrivate per posta: controllo ogni pochi minuti, suono, avviso, tasto che lampeggia -----
+let nuoveFatture = 0;  // arrivate da quando non si guarda la pagina Fatture
+let daCaricare = 0;    // in tutto, arrivate e non ancora caricate
+function segnaFatture() {
+  document.querySelectorAll('nav.principale a[href="#/fatture"], a.pagina-fatture').forEach((el) => {
+    el.classList.toggle("lampeggia", nuoveFatture > 0);
+    let segno = el.querySelector(".contatore");
+    if (!daCaricare) { if (segno) segno.remove(); return; }
+    if (!segno) { segno = h("span", { class: "contatore" }); el.append(segno); }
+    segno.textContent = String(daCaricare);
+  });
+}
+let controlloInCorso = false;
+async function controllaPosta() {
+  if (!ctx || !ctx.titolare || controlloInCorso || document.hidden) return;
+  controlloInCorso = true;
+  try {
+    const esito = await fatture.guardaPosta(ctx);
+    daCaricare = (await ctx.dati.fatture()).filter((f) => f.stato === "da_caricare").length;
+    if (esito.fatture > 0) {
+      nuoveFatture += esito.fatture;
+      suona();
+      mostraAvviso(esito.fatture === 1 ? "È arrivata una fattura per posta" : "Sono arrivate " + esito.fatture + " fatture per posta",
+        "Apri Fatture", () => { location.hash = "#/fatture"; });
+    }
+    segnaFatture();
+  } catch (e) { /* senza rete o altro: si riprova al prossimo giro */ } finally { controlloInCorso = false; }
+}
+setInterval(controllaPosta, 3 * 60000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) controllaPosta(); });
+preparaSuono(document);
 
 sovrascriviAlTocco(document);
 // Fa funzionare l'app anche aperta senza rete e la rende installabile sul telefono.

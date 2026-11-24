@@ -1,7 +1,7 @@
 // Fatture dei fornitori: caricare un PDF, rivedere le righe, farle entrare in magazzino.
 // Per ora si legge il PDF di Metro; il resto (rivedere, abbinare, caricare, annullare) è uguale
 // per qualunque fornitore e qualunque strada da cui arriverà la fattura.
-import { h, vuoto, conConferma } from "../dom.js";
+import { h, vuoto, conConferma, modulo } from "../dom.js";
 import { qta, euro, perCampo, parseNumero } from "../numeri.js";
 import * as metro from "../fatture/metro.js";
 import { leggiTesto } from "../fatture/pdf.js";
@@ -12,6 +12,7 @@ import { inRitardo } from "../ordini.js";
 import * as regoleOrdini from "../ordini.js";
 import { sceltaArticolo } from "./scegli.js";
 import { tipoDi, etichettaArticolo } from "./segni.js";
+import { campiArticolo } from "./articoli.js";
 
 const giorno = (d) => { const p = String(d || "").slice(0, 10).split("-"); return p.length === 3 ? p[2] + "/" + p[1] + "/" + p[0] : "—"; };
 const STATI = { caricata: ["caricata", "attivo"], da_caricare: ["da caricare", "da_completare"], annullata: ["annullata", "rifiutato"] };
@@ -89,7 +90,13 @@ async function apri(ctx, file) {
 // Guarda gli allegati nuovi arrivati per posta: quelli che sono fatture entrano in elenco come «da caricare»,
 // gli altri vengono scartati col motivo. Pochi per volta, per non far aspettare chi apre la pagina.
 const PER_VOLTA = 8;
-export async function guardaPosta(ctx) {
+let postaInCorso = null;
+// Un solo giro per volta: se la pagina Fatture e il controllo periodico partono insieme, il secondo aspetta il primo.
+export function guardaPosta(ctx) {
+  if (!postaInCorso) postaInCorso = giroDellaPosta(ctx).finally(() => { postaInCorso = null; });
+  return postaInCorso;
+}
+async function giroDellaPosta(ctx) {
   const esito = { fatture: 0, scartate: 0, restano: 0 };
   if (!ctx.titolare) return esito;
   const nuove = (await ctx.dati.posta()).filter((p) => p.stato === "nuova").reverse(); // dalla più vecchia
@@ -103,6 +110,8 @@ export async function guardaPosta(ctx) {
       esito.fatture += 1;
     } catch (e) {
       if (e.tipo === "rete" || e.tipo === "sessione") break; // non è colpa del file: si riprova la prossima volta
+      // Un altro dispositivo l'ha registrata nello stesso momento: non è da scartare, la si ritrova al prossimo giro.
+      if (e.tipo === "doppione") continue;
       await ctx.dati.segnaPosta(p.id, { stato: "scartata", nota: String(e.message || "Non letto").slice(0, 300) });
       // Non è una fattura: il documento non deve restare nel magazzino (può essere una busta paga, un atto…).
       try { await ctx.dati.svuotaFilePosta(p.id); } catch (x) { /* resta la riga scartata; si riprova dalla pagina della posta */ }
@@ -217,7 +226,8 @@ export function blocchiConfronto(c, titolo, nota) {
 export async function rivedi(ctx) {
   if (!bozza) return vuoto("Non c'è nessuna fattura in revisione: torna a Fatture e caricane una.");
   const b = bozza;
-  const articoli = (await ctx.dati.articoli()).filter((a) => a.attivo !== false && !a.prodotto_in_cucina);
+  const tuttiGliArticoli = (await ctx.dati.articoli()).slice();
+  const articoli = tuttiGliArticoli.filter((a) => a.attivo !== false && !a.prodotto_in_cucina);
   // L'ordine che aspettava questa fattura (se c'è) e i prezzi pagati finora: per il confronto qui sotto.
   const ordine = regoleOrdini.ordinePerFattura(await ctx.dati.ordini(), b.testata.fornitore_id, b.testata.data);
   const prezzi = (await ctx.dati.perIConti(ctx.ristorante)).prezzi;
@@ -258,10 +268,11 @@ export async function rivedi(ctx) {
   }
 
   function disegnaRiga(r, li) {
-    const quanti = r.leggibile ? qta(r.qtaFattura) + " " + (r.udmFattura || "") + " · " + euro(r.importo)
-      + (r.sconto ? " (tolto lo sconto di fine fattura: " + euro(r.sconto) + ")" : "") : "";
+    const quanti = r.leggibile ? qta(r.qtaFattura) + " " + (r.udmFattura || "") + " · " + euro(r.importo) : "";
     const ridisegna = () => { disegnaRiga(r, li); aggiornaConto(); };
-    const testa = [h("strong", {}, r.descrizione || "Riga " + r.n), h("span", { class: "numero" }, quanti)];
+    // La nota dello sconto sta su una riga sua: dentro al numero non andava a capo e allargava la pagina sul telefono.
+    const testa = [h("strong", {}, r.descrizione || "Riga " + r.n), h("span", { class: "numero" }, quanti),
+      r.leggibile && r.sconto ? h("span", { class: "nota" }, "tolto lo sconto di fine fattura: " + euro(r.sconto)) : null].filter(Boolean);
     if (!r.leggibile) {
       li.className = "riga allarme";
       li.replaceChildren(...testa, h("span", { class: "nota avviso" }, "Non sono riuscito a leggere questa riga (" + r.errore
@@ -297,7 +308,23 @@ export async function rivedi(ctx) {
         const cerca = guscio.querySelector("input[type=search]");
         if (cerca) cerca.focus();
       } }, "Scegli l'articolo di magazzino");
-      guscio.append(apriScelta);
+      // Se l'articolo in magazzino non c'è ancora, lo si crea qui, senza uscire dalla fattura.
+      const apriNuovo = h("button", { type: "button", onclick: () => {
+        guscio.replaceChildren(
+          h("p", { class: "nota" }, "Articolo nuovo per «" + r.descrizione + "»: dagli il nome che usi tu in cucina."),
+          modulo(campiArticolo({ udm: ["kg", "L", "pz"].indexOf(r.udmLetta) >= 0 ? r.udmLetta : "kg" }, tuttiGliArticoli, true),
+            "Crea l'articolo e usalo per questa riga", async (d) => {
+              const a = await ctx.dati.salvaArticolo(d);
+              articoli.push(a); tuttiGliArticoli.push(a); perId.set(a.id, a);
+              r.articolo_id = a.id;
+              Object.assign(r, carico.proponi(r, a, null));
+              r.azione = "carica";
+              ridisegna();
+            }, h("button", { type: "button", class: "leggero", onclick: ridisegna }, "Lascia perdere")));
+        const nome = guscio.querySelector("input[name=nome]");
+        if (nome) nome.focus();
+      } }, "＋ Non c'è: crea un articolo nuovo");
+      guscio.append(apriScelta, apriNuovo);
       li.replaceChildren(...testa, h("span", { class: "nota avviso" }, "Codice mai visto: dimmi a quale articolo corrisponde. Lo ricorderò."), guscio, salti);
       return;
     }

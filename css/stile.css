@@ -317,3 +317,22 @@ textarea.codice { width: 100%; font-family: ui-monospace, Menlo, monospace; font
   border: 2px solid var(--bordo-tasto); border-radius: var(--raggio); padding: .6rem; resize: vertical; }
 .blocco-codice { margin: .6rem 0 1rem; display: grid; gap: .4rem; }
 ol.passi { margin: .6rem 0; padding-left: 1.3rem; display: grid; gap: .5rem; }
+
+/* ---------- Niente che allarghi la pagina sul telefono ---------- */
+.riga > *, .riga-distinta > * { max-width: 100%; min-width: 0; }
+.riga strong { overflow-wrap: anywhere; }
+html, body { overflow-x: clip; }
+
+/* ---------- Avviso in alto e tasto che lampeggia ---------- */
+#avviso-volante { position: fixed; z-index: 20; left: 50%; transform: translateX(-50%); top: calc(.6rem + env(safe-area-inset-top));
+  width: min(34rem, calc(100vw - 1.2rem)); display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .7rem;
+  background: var(--carta); border: 2px solid var(--accento); border-radius: var(--raggio); padding: .8rem .9rem;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, .55); animation: scende .25s ease-out; }
+#avviso-volante strong { flex: 1 1 12rem; }
+@keyframes scende { from { transform: translate(-50%, -120%); } to { transform: translate(-50%, 0); } }
+.contatore { display: inline-block; min-width: 1.3rem; margin-left: .3rem; padding: 0 .3rem; border-radius: 99px; font-size: .72rem; font-weight: 700;
+  background: var(--giallo); color: #1a1500; text-align: center; line-height: 1.3rem; }
+a.reparto-icona .contatore { margin-left: 0; }
+.lampeggia { animation: lampeggia 1s ease-in-out infinite; border-color: var(--giallo) !important; }
+@keyframes lampeggia { 50% { background: var(--giallo); color: #1a1500; } }
+@media (prefers-reduced-motion: reduce) { .lampeggia { animation: none; background: var(--giallo); color: #1a1500; } #avviso-volante { animation: none; } }
