@@ -6,41 +6,72 @@ import { filtra } from "../cerca.js";
 
 const giorno = (iso) => (iso ? new Date(iso).toLocaleDateString("it-IT", { weekday: "short", day: "2-digit", month: "2-digit" }) : "—");
 
-// Registra le chiusure nuove (e, se chiesto, ripassa quelle già registrate: serve dopo aver collegato una voce).
-let inCorso = null;
-export function guardaCassa(ctx, anche) {
-  if (!inCorso) inCorso = giro(ctx, anche).finally(() => { inCorso = null; });
-  return inCorso;
-}
-async function giro(ctx, ancheRegistrate) {
-  const esito = { chiusure: 0, vendite: 0, scartate: 0 };
-  if (!ctx.titolare) return esito;
-  const tutte = await ctx.dati.chiusure();
-  for (const c of tutte) {
-    if (c.stato === "scartata" || (c.stato === "registrata" && !ancheRegistrate)) continue;
-    try {
-      const r = await ctx.dati.registraChiusura(c);
-      if (r.scartata) esito.scartate += 1;
-      else { esito.vendite += r.vendite; if (c.stato === "nuova") esito.chiusure += 1; }
-    } catch (e) { if (e.tipo === "rete" || e.tipo === "sessione") break; throw e; }
-  }
-  return esito;
+// Le chiusure arrivate si tengono in memoria per qualche minuto: sono pesanti da riscaricare a ogni tocco.
+let memoria = null; // { chi, quando, chiusure }
+async function leggiChiusure(ctx, fresche) {
+  const chi = ctx.ristorante.id;
+  if (!fresche && memoria && memoria.chi === chi && Date.now() - memoria.quando < 120000) return memoria.chiusure;
+  const chiusure = await ctx.dati.chiusure();
+  memoria = { chi: chi, quando: Date.now(), chiusure: chiusure };
+  return chiusure;
 }
 
+// Registra le chiusure nuove. Un solo giro per volta.
+let inCorso = null;
+// fresche: riscarica l'elenco dall'archivio (lo fa il controllo periodico); senza, usa quello in memoria se è recente.
+export function guardaCassa(ctx, fresche) {
+  if (!inCorso) inCorso = giro(ctx, fresche).finally(() => { inCorso = null; });
+  return inCorso;
+}
+export const chiusureNote = (ctx) => leggiChiusure(ctx, false);
+async function giro(ctx, fresche) {
+  if (!ctx.titolare) return { chiusure: 0, vendite: 0, scartate: 0 };
+  const nuove = (await leggiChiusure(ctx, fresche)).filter((c) => c.stato === "nuova");
+  const r = await ctx.dati.registraChiusure(nuove);
+  return { chiusure: r.nuove, vendite: r.vendite, scartate: r.scartate };
+}
+// Le chiusure (già scaricate) in cui compare una voce: solo quelle si ripassano quando la voce viene sistemata.
+function chiusureCon(chiusure, codice) {
+  return chiusure.filter((c) => {
+    if (c.stato === "scartata") return false;
+    try { return regole.leggiChiusura(JSON.parse(c.valori || "[]")).some((v) => v.codice === codice); } catch (e) { return false; }
+  });
+}
+
+let fattoOra = ""; // l'esito dell'ultima voce sistemata, da mostrare una volta
 export async function pagina(ctx, ridisegna) {
   if (!ctx.titolare) return vuoto("Solo il titolare vede le chiusure di cassa.");
+  const messaggio = fattoOra;
+  fattoOra = "";
   let fatto = { chiusure: 0, vendite: 0, scartate: 0 }, guasto = "";
   try { fatto = await guardaCassa(ctx); } catch (e) { guasto = e.message || ""; }
-  const [chiusure, collegamenti, piatti] = await Promise.all([ctx.dati.chiusure(), ctx.dati.collegamentiCassa(), ctx.dati.piatti()]);
+  const [chiusure, collegamenti, piatti] = await Promise.all([leggiChiusure(ctx), ctx.dati.collegamentiCassa(), ctx.dati.piatti()]);
   const daSistemare = regole.vociDaSistemare(chiusure, collegamenti);
   const buone = chiusure.filter((c) => c.stato !== "scartata");
   const ultima = buone.length ? regole.quandoChiusura(buone[buone.length - 1].nome_file) : null;
   const errore = h("p", { class: "errore", role: "alert" });
   const vivi = piatti.filter((p) => p.stato !== "archiviato");
-  // Dopo ogni scelta si recuperano le vendite delle chiusure già arrivate e si ridisegna.
-  const prova = async (azione) => {
+  const lavoro = h("p", { class: "nota avviso", role: "status" });
+  let occupato = false;
+  // Alla scelta la voce sparisce SUBITO dallo schermo; intanto si collega e si recuperano le sue vendite nelle
+  // chiusure dove compare (una lettura sola, un invio solo). Se qualcosa va storto la voce ricompare, con l'errore.
+  const sistema = async (v, riga, azione) => {
+    if (occupato) return;
+    occupato = true;
     errore.textContent = "";
-    try { await azione(); await guardaCassa(ctx, true); ridisegna(); } catch (e) { errore.textContent = e.message || "Non riuscito."; }
+    riga.hidden = true;
+    lavoro.textContent = "Sistemo «" + (v.descrizione || v.codice) + "» e recupero le sue vendite…";
+    try {
+      await azione();
+      const r = await ctx.dati.registraChiusure(chiusureCon(chiusure, v.codice));
+      lavoro.textContent = "";
+      fattoOra = "«" + (v.descrizione || v.codice) + "» sistemata: recuperate " + r.vendite + (r.vendite === 1 ? " vendita." : " vendite.");
+      ridisegna();
+    } catch (e) {
+      riga.hidden = false;
+      lavoro.textContent = "";
+      errore.textContent = e.message || "Non riuscito.";
+    } finally { occupato = false; }
   };
 
   function voce(v) {
@@ -51,7 +82,7 @@ export async function pagina(ctx, ridisegna) {
       const disegna = () => {
         const trovati = filtra(vivi, cerca.value, "").slice(0, 8);
         lista.replaceChildren(...trovati.map((p) => h("li", {}, h("button", { type: "button", class: "riga tipo-piatto",
-          onclick: () => prova(() => ctx.dati.collegaVoceCassa(v.codice, p.id)) }, h("strong", {}, p.nome), h("span", { class: "nota" }, p.categoria || "")))));
+          onclick: () => sistema(v, riga, () => ctx.dati.collegaVoceCassa(v.codice, p.id)) }, h("strong", {}, p.nome), h("span", { class: "nota" }, p.categoria || "")))));
         if (!trovati.length) lista.append(h("li", { class: "nota" }, "Nessun piatto così: crealo col tasto qui sotto."));
       };
       cerca.addEventListener("input", disegna);
@@ -61,13 +92,14 @@ export async function pagina(ctx, ridisegna) {
       cerca.focus();
     } }, "È un piatto che ho già");
     guscio.append(scegli);
-    return h("li", { class: "riga allarme" },
+    const riga = h("li", { class: "riga allarme" },
       h("strong", {}, v.descrizione || "Voce " + v.codice), h("span", { class: "numero" }, qta(v.quantita) + " venduti · " + euro(v.importo)),
       h("span", { class: "nota" }, "in " + v.chiusure + (v.chiusure === 1 ? " chiusura" : " chiusure") + ": finché non la sistemi, queste vendite non contano"),
       guscio,
       h("span", { class: "dose" },
-        h("button", { type: "button", onclick: () => prova(() => ctx.dati.creaPiattoDaVoce(v, false)) }, "＋ Piatto nuovo (poi faccio la distinta)"),
-        conConferma("Non è merce (coperto, acqua alla spina…)", "Sì, solo incasso", () => prova(() => ctx.dati.creaPiattoDaVoce(v, true)), "")));
+        h("button", { type: "button", onclick: () => sistema(v, riga, () => ctx.dati.creaPiattoDaVoce(v, false)) }, "＋ Piatto nuovo (poi faccio la distinta)"),
+        conConferma("Non è merce (coperto, acqua alla spina…)", "Sì, solo incasso", () => sistema(v, riga, () => ctx.dati.creaPiattoDaVoce(v, true)), "")));
+    return riga;
   }
 
   return h("section", {},
@@ -80,7 +112,8 @@ export async function pagina(ctx, ridisegna) {
       h("li", { class: "voce" }, h("span", {}, "Voci di cassa senza piatto"), h("strong", { class: daSistemare.length ? "rosso" : "" }, String(daSistemare.length)))),
     fatto.chiusure ? h("p", { class: "nota avviso" }, "Registrate adesso " + fatto.chiusure + (fatto.chiusure === 1 ? " chiusura nuova" : " chiusure nuove") + " (" + fatto.vendite + " voci vendute).") : null,
     guasto ? h("p", { class: "nota avviso" }, "Le chiusure non si sono potute guardare (" + guasto + ").") : null,
-    errore,
+    messaggio ? h("p", { class: "nota" }, "✓ " + messaggio) : null,
+    lavoro, errore,
     h("h3", {}, "Voci da sistemare (" + daSistemare.length + ")"),
     daSistemare.length ? h("ul", { class: "lista" }, daSistemare.map(voce))
       : h("p", { class: "nota" }, buone.length ? "✓ Ogni voce venduta ha il suo piatto." : "Ancora nessuna chiusura arrivata."),

@@ -275,8 +275,8 @@ async function controllaPosta() {
     }
     segnaFatture();
     // Insieme alla posta, le chiusure di cassa: le nuove diventano vendite senza che nessuno apra niente.
-    const cassa = await cassaPagina.guardaCassa(ctx);
-    vociCassa = vociDaSistemare(await ctx.dati.chiusure(), await ctx.dati.collegamentiCassa()).length;
+    const cassa = await cassaPagina.guardaCassa(ctx, true);
+    vociCassa = vociDaSistemare(await cassaPagina.chiusureNote(ctx), await ctx.dati.collegamentiCassa()).length;
     segnaCassa();
     if (cassa.chiusure > 0 && mostrata !== "#/cassa") {
       mostraAvviso("Arrivata la chiusura di cassa: vendite registrate" + (vociCassa ? ", " + vociCassa + " voci da sistemare" : ""),

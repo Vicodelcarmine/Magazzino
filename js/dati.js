@@ -454,25 +454,43 @@ export function creaDati(archivioVero, ristoranteId, copia, spazio) {
       catch (e) { if (e.tipo === "rete") return []; throw e; }
     },
     async collegamentiCassa() { return (await tutta("collegamenti_piatto")).filter((c) => c.sistema === "cassa"); },
-    // Scrive nel registro le vendite di una chiusura che non ci sono ancora. Le voci senza piatto restano in attesa.
-    async registraChiusura(chiusura) {
-      let valori;
-      try { valori = JSON.parse(chiusura.valori || "[]"); } catch (e) { valori = null; }
-      const voci = valori ? cassa.leggiChiusura(valori) : [];
-      if (!voci.length || !cassa.quandoChiusura(chiusura.nome_file)) {
-        await archivioVero.modifica("chiusure_arrivate", { id: chiusura.id, ristorante_id: ristoranteId },
-          { stato: "scartata", nota: !voci.length ? "Nel foglio non trovo voci vendute." : "Dal nome del file non capisco giorno e ora della chiusura." });
-        return { vendite: 0, senzaPiatto: 0, scartata: true };
-      }
+    // Scrive nel registro le vendite che mancano di un gruppo di chiusure, in una volta sola: il registro si legge
+    // una volta, le vendite partono insieme. Le voci senza piatto restano in attesa.
+    async registraChiusure(lista) {
+      const esito = { vendite: 0, nuove: 0, scartate: 0, perChiusura: [] };
+      if (!lista.length) return esito;
       const [collegamenti, movimenti] = await Promise.all([tutta("collegamenti_piatto"), tutta("movimenti")]);
-      const piano = cassa.daRegistrare(chiusura, voci, collegamenti, movimenti, Object.assign({ autore_id: archivio.utente().id }, qui));
-      const righe = piano.vendite.map((v) => Object.assign({ id: nuovoId() }, v));
-      for (let i = 0; i < righe.length; i += 200) await archivio.inserisci("movimenti", righe.slice(i, i + 200));
-      if (chiusura.stato !== "registrata") {
-        await archivioVero.modifica("chiusure_arrivate", { id: chiusura.id, ristorante_id: ristoranteId }, { stato: "registrata", nota: "" });
+      const extra = Object.assign({ autore_id: archivio.utente().id }, qui);
+      const righe = [], daSegnare = [];
+      for (const chiusura of lista) {
+        let valori;
+        try { valori = JSON.parse(chiusura.valori || "[]"); } catch (e) { valori = null; }
+        const voci = valori ? cassa.leggiChiusura(valori) : [];
+        if (!voci.length || !cassa.quandoChiusura(chiusura.nome_file)) {
+          if (chiusura.stato !== "scartata") {
+            await archivioVero.modifica("chiusure_arrivate", { id: chiusura.id, ristorante_id: ristoranteId },
+              { stato: "scartata", nota: !voci.length ? "Nel foglio non trovo voci vendute." : "Dal nome del file non capisco giorno e ora della chiusura." });
+            chiusura.stato = "scartata";
+          }
+          esito.scartate += 1;
+          esito.perChiusura.push({ vendite: 0, senzaPiatto: 0, scartata: true });
+          continue;
+        }
+        const piano = cassa.daRegistrare(chiusura, voci, collegamenti, movimenti, extra);
+        piano.vendite.forEach((v) => righe.push(Object.assign({ id: nuovoId() }, v)));
+        if (chiusura.stato !== "registrata") daSegnare.push(chiusura);
+        esito.perChiusura.push({ vendite: piano.vendite.length, senzaPiatto: piano.senzaPiatto.length, scartata: false });
       }
-      return { vendite: righe.length, senzaPiatto: piano.senzaPiatto.length, scartata: false };
+      for (let i = 0; i < righe.length; i += 300) await archivio.inserisci("movimenti", righe.slice(i, i + 300));
+      for (const chiusura of daSegnare) {
+        await archivioVero.modifica("chiusure_arrivate", { id: chiusura.id, ristorante_id: ristoranteId }, { stato: "registrata", nota: "" });
+        chiusura.stato = "registrata";
+      }
+      esito.vendite = righe.length;
+      esito.nuove = daSegnare.length;
+      return esito;
     },
+    async registraChiusura(chiusura) { return (await api.registraChiusure([chiusura])).perChiusura[0]; },
     // Una voce di cassa è questo piatto. Da qui in poi (e per le chiusure già arrivate) le sue vendite contano.
     async collegaVoceCassa(codice, piattoId) {
       const r = await archivio.inserisci("collegamenti_piatto", Object.assign({ id: nuovoId(), piatto_id: piattoId,
