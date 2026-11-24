@@ -254,3 +254,14 @@ details.numeri .num { text-align: right; font-variant-numeric: tabular-nums; }
 .quale-archivio .filtri, .quale-archivio .nota { margin: 0; }
 a.bollo { text-decoration: none; }
 .bollo.rifiutato { background: #3b1612; border-color: var(--allarme); color: var(--allarme); }
+
+/* ---------- Fatture raccolte per anno e per mese ---------- */
+details.tendina { margin-top: .6rem; border: 2px solid var(--bordo-tasto); border-radius: var(--raggio); background: var(--carta); }
+details.tendina > summary { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .7rem; padding: .7rem .9rem; list-style: none; }
+details.tendina > summary::-webkit-details-marker { display: none; }
+details.tendina > summary::before { content: "▸"; color: var(--accento); font-weight: 700; }
+details.tendina[open] > summary::before { content: "▾"; }
+details.tendina > summary strong { text-transform: capitalize; }
+details.tendina.anno > summary strong { font-size: 1.2rem; }
+details.tendina.anno > details, details.tendina.mese > .lista { margin: 0 .6rem .6rem; }
+details.tendina.mese { background: transparent; border-width: 1px; border-color: var(--bordo); }

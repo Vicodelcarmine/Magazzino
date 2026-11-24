@@ -104,13 +104,48 @@ export async function elenco(ctx) {
       h("a", { href: "#/fatture/rivedi" }, "riprendila da dove eri")) : null,
     daCaricare.length ? h("p", { class: "nota avviso" }, daCaricare.length === 1 ? "C'è una fattura arrivata e non ancora caricata."
       : "Ci sono " + daCaricare.length + " fatture arrivate e non ancora caricate.") : null,
-    fatture.length ? h("ul", { class: "lista" }, fatture.map((f) =>
-      h("li", {}, h("a", { class: "riga" + (f.stato === "da_caricare" ? " allarme" : ""), href: "#/fatture/" + f.id },
-        h("strong", {}, (nomi.get(f.fornitore_id) || "Fornitore") + " " + f.numero),
-        bolloStato(f),
-        h("span", { class: "numero" }, f.imponibile == null ? "" : euro(f.imponibile)),
-        h("span", { class: "nota" }, "del " + giorno(f.data) + (f.origine === "importazione" ? " · caricata nel vecchio gestionale" : ""))))))
-      : vuoto("Ancora nessuna fattura. Carica la prima col tasto qui sopra."));
+    fatture.length ? perAnni(fatture, nomi) : vuoto("Ancora nessuna fattura. Carica la prima col tasto qui sopra."));
+}
+
+// Le fatture raccolte in tendine: un anno, e dentro i suoi mesi. Di ogni tendina si vede subito quante
+// fatture contiene e quanto valgono. All'inizio è aperto solo il mese più recente; le tendine con una
+// fattura ancora da caricare restano aperte, perché non devono sfuggire. Quelle che apri o chiudi tu
+// restano così finché non chiudi l'app.
+const MESI = ["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre"];
+const scelte = new Map(); // "2026" o "2026-11" → aperta (vero/falso), come l'ha lasciata chi usa l'app
+
+function tendina(chiave, apertaDiSuo, classe, titolo, fatture, contenuto) {
+  const totale = fatture.reduce((s, f) => s + (f.stato === "annullata" ? 0 : Number(f.imponibile || 0)), 0);
+  const attesa = fatture.filter((f) => f.stato === "da_caricare").length;
+  const d = h("details", { class: "tendina " + classe, open: scelte.has(chiave) ? scelte.get(chiave) : apertaDiSuo || attesa > 0 },
+    h("summary", {}, h("strong", {}, titolo),
+      attesa ? h("span", { class: "bollo da_completare" }, attesa + " da caricare") : null,
+      h("span", { class: "nota" }, fatture.length + (fatture.length === 1 ? " fattura" : " fatture")),
+      h("span", { class: "numero" }, euro(totale))),
+    contenuto);
+  d.addEventListener("toggle", () => scelte.set(chiave, d.open));
+  return d;
+}
+
+function perAnni(fatture, nomi) {
+  const anni = new Map();
+  fatture.forEach((f) => {
+    const anno = String(f.data).slice(0, 4), mese = String(f.data).slice(0, 7);
+    if (!anni.has(anno)) anni.set(anno, new Map());
+    if (!anni.get(anno).has(mese)) anni.get(anno).set(mese, []);
+    anni.get(anno).get(mese).push(f);
+  });
+  const riga = (f) => h("li", {}, h("a", { class: "riga" + (f.stato === "da_caricare" ? " allarme" : ""), href: "#/fatture/" + f.id },
+    h("strong", {}, (nomi.get(f.fornitore_id) || "Fornitore") + " " + f.numero),
+    bolloStato(f),
+    h("span", { class: "numero" }, f.imponibile == null ? "" : euro(f.imponibile)),
+    h("span", { class: "nota" }, "del " + giorno(f.data) + (f.origine === "importazione" ? " · caricata nel vecchio gestionale" : ""))));
+  // Le fatture arrivano già dalla più recente: anni e mesi restano in quell'ordine.
+  return h("div", { class: "tendine" }, Array.from(anni.entries()).map(([anno, mesi], ia) =>
+    tendina(anno, ia === 0, "anno", anno, Array.from(mesi.values()).flat(),
+      Array.from(mesi.entries()).map(([mese, lista], im) =>
+        tendina(mese, ia === 0 && im === 0, "mese", MESI[Number(mese.slice(5, 7)) - 1] || mese, lista,
+          h("ul", { class: "lista" }, lista.map(riga)))))));
 }
 
 // ---------- revisione della fattura appena letta ----------
