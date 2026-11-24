@@ -2,8 +2,7 @@
 import { h, campo, modulo, suggerimenti, vuoto } from "../dom.js";
 import { euro, perCampo } from "../numeri.js";
 import { categorie } from "../codici.js";
-import { filtra } from "../cerca.js";
-import { barraCategorie } from "./scegli.js";
+import { reparti } from "./reparti.js";
 import { codice as segnoCodice, categoria as segnoCategoria } from "./segni.js";
 
 export const STATI = {
@@ -14,32 +13,19 @@ export const STATI = {
 
 export async function elenco(ctx) {
   const piatti = await ctx.dati.piatti();
-  const lista = h("ul", { class: "lista" });
-  let testo = "";
-  let categoria = "";
-  function disegna() {
-    const visti = filtra(piatti, testo, categoria);
-    lista.replaceChildren(...visti.map((p) =>
-      h("li", {}, h("a", { class: "riga tipo-piatto" + (p.stato === "archiviato" ? " spento" : ""), href: "#/piatti/" + p.id },
-        h("strong", {}, p.nome),
-        segnoCategoria("piatto", p.categoria),
-        h("span", { class: "bollo " + p.stato }, STATI[p.stato]),
-        h("span", { class: "nota" }, p.prezzo_listino != null ? euro(p.prezzo_listino) : "senza prezzo")))));
-    if (!visti.length) lista.append(h("li", {}, vuoto(piatti.length
-      ? "Nessun piatto così." : "Nessun piatto. Aggiungi il primo con «＋ Nuovo»: subito dopo ti chiedo la distinta base.")));
-  }
-  disegna();
+  const riga = (p) => h("li", {}, h("a", { class: "riga tipo-piatto" + (p.stato === "archiviato" ? " spento" : ""), href: "#/piatti/" + p.id },
+    h("strong", {}, p.nome),
+    h("span", { class: "bollo " + p.stato }, STATI[p.stato]),
+    h("span", { class: "nota" }, p.prezzo_listino != null ? euro(p.prezzo_listino) : "senza prezzo")));
   return h("section", { class: "tipo-piatto" },
     h("div", { class: "testata" },
       h("h2", {}, "Piatti in vendita"),
       ctx.titolare ? h("a", { class: "pulsante primario", href: "#/piatti/nuovo" }, "＋ Nuovo") : null),
     h("p", { class: "nota" }, "Ciò che vendi. Quello che compri sta in Articoli."),
-    barraCategorie(piatti, (c) => { categoria = c; disegna(); }, "piatto"),
-    piatti.length > 5 ? h("input", {
-      type: "search", placeholder: "Cerca per nome", "aria-label": "Cerca piatto",
-      oninput: (ev) => { testo = ev.target.value; disegna(); },
-    }) : null,
-    lista);
+    reparti({ voci: piatti, riga: riga, memoria: "piatti", unita: ["piatto", "piatti"],
+      allarme: (p) => p.stato === "da_completare", etichettaAllarme: (n) => n + (n === 1 ? " senza distinta" : " senza distinta"),
+      cerca: "Cerca un piatto in tutti i reparti",
+      vuoto: "Nessun piatto. Aggiungi il primo con «＋ Nuovo»: subito dopo ti chiedo la distinta base." }));
 }
 
 // Il codice non è fra i campi: lo assegna il sistema quando il piatto nasce.

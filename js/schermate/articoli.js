@@ -2,8 +2,7 @@
 import { h, campo, modulo, scelta, spunta, suggerimenti, vuoto } from "../dom.js";
 import { qta, perCampo } from "../numeri.js";
 import { categorie } from "../codici.js";
-import { filtra } from "../cerca.js";
-import { barraCategorie } from "./scegli.js";
+import { reparti } from "./reparti.js";
 import { codice as segnoCodice, categoria as segnoCategoria } from "./segni.js";
 import { usatoIn, vendiCosi } from "./rivendita.js";
 
@@ -14,37 +13,21 @@ const TIPI = [
 ];
 
 export async function elenco(ctx) {
-  // Le preparazioni hanno la loro pagina: qui solo ciò che si compra.
   const articoli = (await ctx.dati.articoli()).filter((a) => !a.prodotto_in_cucina);
-  const lista = h("ul", { class: "lista" });
-  let testo = "";
-  let categoria = "";
-  function disegna() {
-    const visti = filtra(articoli, testo, categoria);
-    lista.replaceChildren(...visti.map((a) =>
-      h("li", {}, h("a", { class: "riga tipo-articolo" + (a.attivo ? "" : " spento"), href: "#/articoli/" + a.id },
-        h("strong", {}, a.nome),
-        segnoCategoria("articolo", a.categoria),
-        h("span", { class: "nota" }, [
-          a.qta_confezione > 0 ? "confezione da " + qta(a.qta_confezione) + " " + a.udm : "si conta in " + a.udm,
-          a.tipo === "tempo" ? "a tempo" : null,
-          a.attivo ? null : "non attivo",
-        ].filter(Boolean).join(" · "))))));
-    if (!visti.length) lista.append(h("li", {}, vuoto(articoli.length
-      ? "Nessun articolo così." : "Nessun articolo. Aggiungi il primo con «＋ Nuovo».")));
-  }
-  disegna();
+  const riga = (a) => h("li", {}, h("a", { class: "riga tipo-articolo" + (a.attivo ? "" : " spento"), href: "#/articoli/" + a.id },
+    h("strong", {}, a.nome),
+    h("span", { class: "nota" }, [
+      a.qta_confezione > 0 ? "confezione da " + qta(a.qta_confezione) + " " + a.udm : "si conta in " + a.udm,
+      a.tipo === "tempo" ? "a tempo" : null,
+      a.attivo ? null : "non attivo",
+    ].filter(Boolean).join(" · "))));
   return h("section", { class: "tipo-articolo" },
     h("div", { class: "testata" },
       h("h2", {}, "Articoli di magazzino"),
       ctx.titolare ? h("a", { class: "pulsante primario", href: "#/articoli/nuovo" }, "＋ Nuovo") : null),
     h("p", { class: "nota" }, "Ciò che compri e conti. Quello che vendi sta in Piatti."),
-    barraCategorie(articoli, (c) => { categoria = c; disegna(); }),
-    articoli.length > 5 ? h("input", {
-      type: "search", placeholder: "Cerca per nome", "aria-label": "Cerca articolo",
-      oninput: (ev) => { testo = ev.target.value; disegna(); },
-    }) : null,
-    lista);
+    reparti({ voci: articoli, riga: riga, memoria: "articoli", unita: ["articolo", "articoli"],
+      cerca: "Cerca un articolo in tutti i reparti", vuoto: "Nessun articolo. Aggiungi il primo con «＋ Nuovo»." }));
 }
 
 // I campi dell'articolo, usati anche dalla distinta base per «articolo nuovo sul momento».

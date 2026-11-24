@@ -2,9 +2,8 @@
 // I numeri non sono salvati da nessuna parte: si ricalcolano ogni volta dal registro dei movimenti.
 import { h, campo, modulo, scelta, vuoto, conConferma } from "../dom.js";
 import { qta, euro } from "../numeri.js";
-import { filtra, categorieCon } from "../cerca.js";
 import * as motore from "../motore.js";
-import { barraCategorie } from "./scegli.js";
+import { reparti } from "./reparti.js";
 import { categoria as segnoCategoria } from "./segni.js";
 
 const GIORNO = 86400000;
@@ -30,129 +29,31 @@ function sfridoTesto(p) {
   return "sfrido " + qta(p.coef) + extra;
 }
 
-// ---------- DEMO: due modi di vedere il Magazzino senza la pagina lunghissima ----------
-// Provvisorie: servono al titolare per scegliere. Quella scelta sostituirà la pagina Magazzino, l'altra sparisce.
-//  a = i reparti come tendine, tutte chiuse: se ne apre una alla volta;
-//  b = i reparti come icone; entrati in un reparto, gli altri restano sotto come tendine.
-const ICONE = [["carne", "🥩"], ["pesce", "🐟"], ["latticin", "🧀"], ["formagg", "🧀"], ["salum", "🥓"], ["verdur", "🥬"], ["frutta", "🥬"],
-  ["farin", "🌾"], ["past", "🌾"], ["dolc", "🍰"], ["barattol", "🥫"], ["sals", "🥫"], ["oli", "🫒"], ["spezi", "🌿"], ["uov", "🥚"],
-  ["soft", "🥤"], ["bevand", "🥤"], ["spirit", "🍸"], ["vin", "🍷"], ["birr", "🍺"], ["non food", "🧴"], ["material", "🧴"]];
-function iconaDi(nome) {
-  const n = String(nome || "").toLowerCase();
-  const t = ICONE.find((x) => n.includes(x[0]));
-  return t ? t[1] : "📦";
-}
-const ricordoDemo = { a: "", b: "" }; // il reparto lasciato aperto, per ritrovarlo tornando indietro
-
-export async function magazzinoDemo(ctx, quale) {
-  const b = quale === "b";
-  const c = await conti(ctx);
-  const tutti = motore.cruscotto(c).filter((p) => p.attivo);
-  const reparti = categorieCon(tutti).map((r) => {
-    const suoi = filtra(tutti, "", r.chiave);
-    return Object.assign({}, r, { articoli: suoi, sottoZero: suoi.filter((p) => p.giacenzaNegativa).length });
-  });
-  let aperto = ricordoDemo[quale] || "", testo = "";
-  const corpo = h("div", {});
-
-  const riga = (p) => h("li", {}, h("a", { class: "riga tipo-articolo" + (p.giacenzaNegativa ? " allarme" : ""), href: "#/magazzino/" + p.id },
-    h("strong", {}, p.nome),
-    h("span", { class: "numero" + (p.giacenzaNegativa ? " rosso" : "") }, qta(p.giacenza) + " " + p.udm),
-    h("span", { class: "nota" }, [
-      p.giacenzaNegativa ? "sotto zero: va ricontato" : (p.autonomia == null ? null : "basta per " + qta(Math.floor(p.autonomia)) + " giorni"),
-      "contato: " + giorno(p.contatoIl)].filter(Boolean).join(" · "))));
-  const segni = (r) => [
-    h("span", { class: "nota" }, r.quante + (r.quante === 1 ? " articolo" : " articoli")),
-    r.sottoZero ? h("span", { class: "bollo rifiutato" }, r.sottoZero + " sotto zero") : null];
-
-  function tendine() {
-    return h("div", { class: "tendine" }, reparti.map((r) => {
-      const d = h("details", { class: "tendina mese reparto", open: aperto === r.chiave },
-        h("summary", {}, h("span", { class: "icona" }, iconaDi(r.nome)), h("strong", {}, r.nome), segni(r)),
-        h("ul", { class: "lista" }, r.articoli.map(riga)));
-      // Una sola aperta alla volta: aprendone una, le altre si chiudono e la pagina resta corta.
-      d.addEventListener("toggle", () => {
-        if (d.open && aperto !== r.chiave) { aperto = r.chiave; ricordoDemo[quale] = aperto; disegna(); }
-        else if (!d.open && aperto === r.chiave) { aperto = ""; ricordoDemo[quale] = ""; }
-      });
-      return d;
-    }));
-  }
-  function icone() {
-    return h("div", { class: "griglia-reparti" }, reparti.map((r) =>
-      h("button", { type: "button", class: "reparto-icona" + (r.sottoZero ? " allarme" : ""), onclick: () => { aperto = r.chiave; ricordoDemo[quale] = aperto; disegna(); window.scrollTo(0, 0); } },
-        h("span", { class: "icona" }, iconaDi(r.nome)), h("strong", {}, r.nome),
-        h("span", { class: "nota" }, r.quante + (r.quante === 1 ? " articolo" : " articoli")),
-        r.sottoZero ? h("span", { class: "bollo rifiutato" }, r.sottoZero + " sotto zero") : null)));
-  }
-  function disegna() {
-    if (testo.trim()) { // scrivendo si cerca in tutti i reparti insieme
-      const trovati = filtra(tutti, testo, "");
-      corpo.replaceChildren(trovati.length ? h("ul", { class: "lista" }, trovati.map(riga)) : vuoto("Nessun articolo così."));
-    } else if (b && !aperto) {
-      corpo.replaceChildren(icone());
-    } else {
-      corpo.replaceChildren(...[
-        b ? h("button", { type: "button", class: "leggero", onclick: () => { aperto = ""; ricordoDemo[quale] = ""; disegna(); } }, "‹ Tutti i reparti") : null,
-        tendine()].filter(Boolean));
-      const ora = corpo.querySelector("details[open]");
-      if (ora && ora.getBoundingClientRect().top < 0) ora.scrollIntoView();
-    }
-  }
-  disegna();
-  return h("section", { class: "tipo-articolo" },
-    h("div", { class: "testata" }, h("h2", {}, "Magazzino — demo " + (b ? "2: icone" : "1: tendine"))),
-    h("p", { class: "nota avviso" }, "Pagina di prova coi tuoi dati veri. ",
-      h("a", { href: b ? "#/demo/a" : "#/demo/b" }, b ? "Guarda la demo 1 (tendine)" : "Guarda la demo 2 (icone)"),
-      " · ", h("a", { href: "#/magazzino" }, "Torna alla pagina di adesso")),
-    h("input", { type: "search", placeholder: "Cerca in tutti i reparti", "aria-label": "Cerca articolo",
-      oninput: (ev) => { testo = ev.target.value; disegna(); } }),
-    corpo);
-}
-
 // ---------- Magazzino ----------
 export async function magazzino(ctx) {
   const c = await conti(ctx);
   const tutti = motore.cruscotto(c).filter((p) => p.attivo);
   const sottoZero = tutti.filter((p) => p.giacenzaNegativa).length;
   const maiContati = tutti.filter((p) => p.contatoIl == null).length;
-  const lista = h("ul", { class: "lista" });
-  let testo = "", categoria = "", solo = "";
-  function disegna() {
-    let visti = filtra(tutti, testo, categoria);
-    if (solo === "zero") visti = visti.filter((p) => p.giacenzaNegativa);
-    if (solo === "mai") visti = visti.filter((p) => p.contatoIl == null);
-    lista.replaceChildren(...visti.map((p) =>
-      h("li", {}, h("a", { class: "riga tipo-articolo" + (p.giacenzaNegativa ? " allarme" : ""), href: "#/magazzino/" + p.id },
-        h("strong", {}, p.nome),
-        h("span", { class: "numero" + (p.giacenzaNegativa ? " rosso" : "") }, qta(p.giacenza) + " " + p.udm),
-        h("span", { class: "nota" }, [
-          p.giacenzaNegativa ? "sotto zero: va ricontato" : (p.autonomia == null ? null : "basta per " + qta(Math.floor(p.autonomia)) + " giorni"),
-          "contato: " + giorno(p.contatoIl),
-          sfridoTesto(p),
-        ].filter(Boolean).join(" · "))))));
-    if (!visti.length) lista.append(h("li", {}, vuoto("Nessun articolo così.")));
-  }
-  const filtro = (chiave, testoTasto) => h("button", { type: "button", class: "filtro", onclick: (ev) => {
-    solo = solo === chiave ? "" : chiave;
-    ev.target.parentNode.querySelectorAll("button").forEach((b) => b.classList.toggle("attivo", b === ev.target && solo === chiave));
-    disegna();
-  } }, testoTasto);
-  disegna();
+  const riga = (p) => h("li", {}, h("a", { class: "riga tipo-articolo" + (p.giacenzaNegativa ? " allarme" : ""), href: "#/magazzino/" + p.id },
+    h("strong", {}, p.nome),
+    h("span", { class: "numero" + (p.giacenzaNegativa ? " rosso" : "") }, qta(p.giacenza) + " " + p.udm),
+    h("span", { class: "nota" }, [
+      p.giacenzaNegativa ? "sotto zero: va ricontato" : (p.autonomia == null ? null : "basta per " + qta(Math.floor(p.autonomia)) + " giorni"),
+      "contato: " + giorno(p.contatoIl),
+      sfridoTesto(p),
+    ].filter(Boolean).join(" · "))));
   return h("section", { class: "tipo-articolo" },
     h("div", { class: "testata" }, h("h2", {}, "Magazzino")),
-    h("p", { class: "nota avviso" }, "In prova, due modi nuovi di vedere questa pagina: ",
-      h("a", { href: "#/demo/a" }, "Demo 1 (tendine)"), " · ", h("a", { href: "#/demo/b" }, "Demo 2 (icone)")),
     aggiornamento(c),
     h("div", { class: "riquadri" },
       riquadro(String(tutti.length), "articoli attivi"),
       riquadro(String(sottoZero), "sotto zero", sottoZero ? "rosso" : ""),
       riquadro(String(maiContati), "mai contati", maiContati ? "giallo" : "")),
-    h("div", { class: "filtri" }, filtro("zero", "Solo sotto zero"), filtro("mai", "Solo mai contati")),
-    barraCategorie(tutti, (k) => { categoria = k; disegna(); }),
-    h("input", { type: "search", placeholder: "Cerca per nome", "aria-label": "Cerca articolo",
-      oninput: (ev) => { testo = ev.target.value; disegna(); } }),
-    lista);
+    reparti({ voci: tutti, riga: riga, memoria: "magazzino", unita: ["articolo", "articoli"],
+      allarme: (p) => p.giacenzaNegativa, etichettaAllarme: (n) => n + " sotto zero",
+      filtri: [["zero", "Solo sotto zero", (p) => p.giacenzaNegativa], ["mai", "Solo mai contati", (p) => p.contatoIl == null]],
+      cerca: "Cerca un articolo in tutti i reparti" }));
 }
 
 function riquadro(numero, cosa, colore) {
@@ -254,18 +155,21 @@ export async function spesa(ctx) {
       riquadro(String(sp.righe.length), "articoli da ordinare"),
       riquadro(euro(sp.totale) + (sp.parziale ? " +" : ""), "spesa prevista"),
       riquadro(String(sp.gruppi.length), "fornitori")),
-    sp.gruppi.length ? sp.gruppi.map((g) => h("div", { class: "gruppo" },
-      h("h3", {}, g.fornitore, h("span", { class: "numero" }, euro(g.totale) + (g.parziale ? " + articoli senza prezzo" : ""))),
-      h("ul", { class: "lista" }, g.righe.map((r) =>
-        h("li", {}, h("a", { class: "riga tipo-articolo", href: "#/magazzino/" + r.id },
-          h("strong", {}, r.nome),
-          h("span", { class: "numero" }, quanto(r)),
-          h("span", { class: "nota" }, [
-            r.costo == null ? "senza prezzo" : euro(r.costo),
-            "in magazzino " + qta(Math.max(0, r.giacenza)) + " " + r.udm,
-            "servono " + qta(r.fabbisogno) + " " + r.udm,
-          ].join(" · ")),
-          r.avviso ? h("span", { class: "nota avviso" }, r.avviso) : null))))))
+    sp.righe.length ? reparti({
+      voci: sp.gruppi.flatMap((g) => g.righe.map((r) => Object.assign({ fornitoreSpesa: g.fornitore }, r))),
+      gruppoDi: (r) => r.fornitoreSpesa, icona: "🚚", memoria: "spesa", unita: ["articolo", "articoli"],
+      valore: (righe) => euro(righe.reduce((s, r) => s + (r.costo || 0), 0)) + (righe.some((r) => r.costo == null) ? " +" : ""),
+      allarme: (r) => r.costo == null, etichettaAllarme: (n) => n + " senza prezzo",
+      cerca: "Cerca un articolo da ordinare",
+      riga: (r) => h("li", {}, h("a", { class: "riga tipo-articolo", href: "#/magazzino/" + r.id },
+        h("strong", {}, r.nome),
+        h("span", { class: "numero" }, quanto(r)),
+        h("span", { class: "nota" }, [
+          r.costo == null ? "senza prezzo" : euro(r.costo),
+          "in magazzino " + qta(Math.max(0, r.giacenza)) + " " + r.udm,
+          "servono " + qta(r.fabbisogno) + " " + r.udm,
+        ].join(" · ")),
+        r.avviso ? h("span", { class: "nota avviso" }, r.avviso) : null)) })
       : vuoto("Niente da ordinare: quello che c'è in magazzino copre i prossimi giorni."));
 }
 
@@ -274,27 +178,19 @@ export async function costi(ctx) {
   const c = await conti(ctx);
   const fc = motore.foodCost(c);
   const allerte = motore.allertePrezzi(c);
-  const lista = h("ul", { class: "lista" });
-  let testo = "", categoria = "";
-  function disegna() {
-    // Prima i piatti che costano di più rispetto a quello che incassano.
-    const peso = (p) => (p.fcIncasso != null ? p.fcIncasso : (p.fcListino != null ? p.fcListino : -1));
-    const visti = filtra(fc.piatti, testo, categoria).sort((a, b) => peso(b) - peso(a));
-    lista.replaceChildren(...visti.map((p) =>
-      h("li", {}, h("a", { class: "riga tipo-piatto", href: "#/piatti/" + p.id },
-        h("strong", {}, p.nome),
-        h("span", { class: "numero" + (p.fcIncasso != null && p.fcIncasso > 0.35 ? " rosso" : "") },
-          p.fcIncasso != null ? pct(p.fcIncasso) : (p.fcListino != null ? pct(p.fcListino) + " (listino)" : "—")),
-        h("span", { class: "nota" }, [
-          "costo " + euro(p.costoReale),
-          p.incasso != null ? "incassi in media " + euro(p.incasso) : (p.listino ? "listino " + euro(p.listino) : "senza prezzo"),
-          p.margine != null ? "margine " + euro(p.margine) : null,
-          p.venduti ? qta(p.venduti) + " venduti" : "mai venduto",
-        ].filter(Boolean).join(" · ")),
-        p.mancanoPrezzi.length ? h("span", { class: "nota avviso" }, "Costo incompleto, manca il prezzo di: " + p.mancanoPrezzi.join(", ")) : null))));
-    if (!visti.length) lista.append(h("li", {}, vuoto("Nessun piatto così.")));
-  }
-  disegna();
+  // Prima i piatti che costano di più rispetto a quello che incassano.
+  const peso = (p) => (p.fcIncasso != null ? p.fcIncasso : (p.fcListino != null ? p.fcListino : -1));
+  const riga = (p) => h("li", {}, h("a", { class: "riga tipo-piatto", href: "#/piatti/" + p.id },
+    h("strong", {}, p.nome),
+    h("span", { class: "numero" + (p.fcIncasso != null && p.fcIncasso > 0.35 ? " rosso" : "") },
+      p.fcIncasso != null ? pct(p.fcIncasso) : (p.fcListino != null ? pct(p.fcListino) + " (listino)" : "—")),
+    h("span", { class: "nota" }, [
+      "costo " + euro(p.costoReale),
+      p.incasso != null ? "incassi in media " + euro(p.incasso) : (p.listino ? "listino " + euro(p.listino) : "senza prezzo"),
+      p.margine != null ? "margine " + euro(p.margine) : null,
+      p.venduti ? qta(p.venduti) + " venduti" : "mai venduto",
+    ].filter(Boolean).join(" · ")),
+    p.mancanoPrezzi.length ? h("span", { class: "nota avviso" }, "Costo incompleto, manca il prezzo di: " + p.mancanoPrezzi.join(", ")) : null));
   return h("section", { class: "tipo-piatto" },
     h("div", { class: "testata" }, h("h2", {}, "Costi e margini")),
     aggiornamento(c),
@@ -317,8 +213,7 @@ export async function costi(ctx) {
         h("strong", {}, k.fc == null ? "—" : pct(k.fc) + " · " + euro(k.ricavo))))),
 
     h("h3", {}, "Per piatto", h("span", { class: "nota" }, " — dal food cost più alto")),
-    barraCategorie(fc.piatti, (k) => { categoria = k; disegna(); }, "piatto"),
-    h("input", { type: "search", placeholder: "Cerca per nome", "aria-label": "Cerca piatto",
-      oninput: (ev) => { testo = ev.target.value; disegna(); } }),
-    lista);
+    reparti({ voci: fc.piatti, riga: riga, memoria: "costi", unita: ["piatto", "piatti"], ordina: (x, y) => peso(y) - peso(x),
+      allarme: (p) => p.fcIncasso != null && p.fcIncasso > 0.35, etichettaAllarme: (n) => n + " sopra il 35%",
+      cerca: "Cerca un piatto in tutti i reparti" }));
 }

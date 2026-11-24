@@ -266,11 +266,17 @@ details.tendina.anno > summary strong { font-size: 1.2rem; }
 details.tendina.anno > details, details.tendina.mese > .lista { margin: 0 .6rem .6rem; }
 details.tendina.mese { background: transparent; border-width: 1px; border-color: var(--bordo); }
 
-/* ---------- Demo del Magazzino per reparti (provvisorio) ---------- */
+/* ---------- Elenchi lunghi divisi in reparti: icone, e dentro le tendine ---------- */
 .icona { font-size: 1.4rem; line-height: 1; }
-details.reparto > summary strong { text-transform: none; }
+details.tendina.reparto { background: transparent; border-width: 1px; border-color: var(--bordo); }
+details.tendina.reparto[open] { border-color: var(--bordo-tasto); border-width: 2px; }
+details.tendina.reparto > summary strong { text-transform: none; }
+details.tendina.reparto > .lista { margin: 0 .6rem .6rem; }
+.reparti > .leggero, .reparti .leggero { margin: .2rem 0 .1rem; }
 .griglia-reparti { display: grid; grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr)); gap: .6rem; margin-top: .6rem; }
-button.reparto-icona { display: grid; justify-items: center; gap: .25rem; text-align: center; padding: 1rem .5rem; min-height: 8.2rem;
+button.reparto-icona { display: grid; justify-items: center; align-content: start; gap: .25rem; text-align: center; padding: 1rem .5rem; min-height: 8.2rem;
   background: var(--carta); border: 2px solid var(--bordo-tasto); border-radius: var(--raggio); color: var(--testo); }
 button.reparto-icona .icona { font-size: 2.4rem; }
+button.reparto-icona .numero { margin-left: 0; }
 button.reparto-icona.allarme { border-color: var(--allarme); }
+.tipo-piatto button.reparto-icona.allarme { border-color: var(--giallo); }
