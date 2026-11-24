@@ -7,6 +7,7 @@ import * as metro from "../fatture/metro.js";
 import { leggiTesto } from "../fatture/pdf.js";
 import * as xml from "../fatture/xml.js";
 import * as carico from "../fatture/carico.js";
+import { daBase64, mittenteBreve } from "../posta.js";
 import { inRitardo } from "../ordini.js";
 import * as regoleOrdini from "../ordini.js";
 import { sceltaArticolo } from "./scegli.js";
@@ -41,43 +42,79 @@ async function fornitoreDaNome(ctx, nome) {
   return ctx.dati.salvaFornitore({ nome: nome.trim() }, tutti);
 }
 
-async function apri(ctx, file) {
-  const buffer = await file.arrayBuffer();
-  const bytes = new Uint8Array(buffer);
-  const impronta = metro.impronta(bytes);
-  if (/\.p7m$/i.test(file.name)) {
+// Legge un file (PDF Metro o XML) e dice di che fornitore è. nome serve solo a riconoscere i .p7m.
+async function leggiFile(ctx, bytes, nome) {
+  if (/\.p7m$/i.test(nome || "")) {
     throw new Error("Questo è un file firmato (.p7m): per ora non lo so aprire. Dal cassetto fiscale scarica la versione «file fattura» in XML.");
   }
   const ePdf = bytes.length > 4 && bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46; // «%PDF»
   let lettura, fornitore, origine;
   if (ePdf) {
-    const testo = await leggiTesto(buffer);
+    let testo;
+    try { testo = await leggiTesto(bytes.slice().buffer); }
+    catch (e) { throw new Error("Non riesco ad aprire questo PDF: è rovinato o non è un vero PDF."); }
     if (!metro.eMetro(testo)) {
-      throw new Error("Questo PDF non mi sembra una fattura Metro. In PDF leggo solo quelle; per gli altri fornitori carica il file XML.");
+      throw new Error("Questo PDF non mi sembra una fattura Metro. In PDF leggo solo quelle; per gli altri fornitori serve il file XML.");
     }
     lettura = metro.leggi(testo);
     if (lettura.ok) fornitore = await fornitoreMetro(ctx);
     origine = "pdf";
   } else {
     const testo = new TextDecoder("utf-8").decode(bytes);
-    if (!xml.eFatturaXml(testo)) throw new Error("Non riconosco questo file: carica una fattura Metro in PDF oppure una fattura elettronica in XML.");
+    if (!xml.eFatturaXml(testo)) throw new Error("Non riconosco questo file: non è una fattura Metro in PDF né una fattura elettronica in XML.");
     lettura = xml.leggi(testo);
     if (lettura.ok) fornitore = await fornitoreDaNome(ctx, lettura.fornitore);
     origine = "xml";
   }
   if (!lettura.ok) throw new Error(lettura.errore || "Non sono riuscito a leggere le righe di questa fattura.");
+  return { lettura: lettura, fornitore: fornitore, origine: origine, impronta: metro.impronta(bytes) };
+}
+
+async function preparaBozza(ctx, letto, nomeFile, origine) {
   const [abbinamenti, articoli, fatture] = await Promise.all([ctx.dati.abbinamenti(), ctx.dati.articoli(), ctx.dati.fatture()]);
   bozza = {
-    file: file.name, lettura: lettura,
-    testata: { fornitore_id: fornitore.id, fornitoreNome: fornitore.nome, numero: lettura.numero, data: lettura.data,
-      imponibile: lettura.imponibile, impronta: impronta, origine: origine },
-    righe: carico.prepara(lettura, abbinamenti, articoli, fornitore.id),
-    gia: carico.trovaFattura(fatture, fornitore.id, lettura.numero, lettura.data),
+    file: nomeFile, lettura: letto.lettura,
+    testata: { fornitore_id: letto.fornitore.id, fornitoreNome: letto.fornitore.nome, numero: letto.lettura.numero, data: letto.lettura.data,
+      imponibile: letto.lettura.imponibile, impronta: letto.impronta, origine: origine || letto.origine },
+    righe: carico.prepara(letto.lettura, abbinamenti, articoli, letto.fornitore.id),
+    gia: carico.trovaFattura(fatture, letto.fornitore.id, letto.lettura.numero, letto.lettura.data),
   };
+}
+
+async function apri(ctx, file) {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  await preparaBozza(ctx, await leggiFile(ctx, bytes, file.name), file.name);
+}
+
+// Guarda gli allegati nuovi arrivati per posta: quelli che sono fatture entrano in elenco come «da caricare»,
+// gli altri vengono scartati col motivo. Pochi per volta, per non far aspettare chi apre la pagina.
+const PER_VOLTA = 8;
+export async function guardaPosta(ctx) {
+  const esito = { fatture: 0, scartate: 0, restano: 0 };
+  if (!ctx.titolare) return esito;
+  const nuove = (await ctx.dati.posta()).filter((p) => p.stato === "nuova").reverse(); // dalla più vecchia
+  esito.restano = Math.max(0, nuove.length - PER_VOLTA);
+  for (const p of nuove.slice(0, PER_VOLTA)) {
+    try {
+      const letto = await leggiFile(ctx, daBase64(await ctx.dati.filePosta(p.id)), p.nome_file);
+      const f = await ctx.dati.registraArrivata({ fornitore_id: letto.fornitore.id, numero: letto.lettura.numero, data: letto.lettura.data,
+        imponibile: letto.lettura.imponibile, impronta: letto.impronta });
+      await ctx.dati.segnaPosta(p.id, { stato: "fattura", fattura_id: f.id, nota: "" });
+      esito.fatture += 1;
+    } catch (e) {
+      if (e.tipo === "rete" || e.tipo === "sessione") break; // non è colpa del file: si riprova la prossima volta
+      await ctx.dati.segnaPosta(p.id, { stato: "scartata", nota: String(e.message || "Non letto").slice(0, 300) });
+      esito.scartate += 1;
+    }
+  }
+  return esito;
 }
 
 // ---------- elenco ----------
 export async function elenco(ctx) {
+  // Prima di mostrare l'elenco si guarda se è arrivato qualcosa per posta.
+  let posta = { fatture: 0, scartate: 0, restano: 0 }, erroreposta = "";
+  try { posta = await guardaPosta(ctx); } catch (e) { erroreposta = e.message || ""; }
   const [fatture, fornitori, ordini] = await Promise.all([ctx.dati.fatture(), ctx.dati.fornitori(), ctx.dati.ordini()]);
   const nomi = new Map(fornitori.map((f) => [f.id, f.nome]));
   const inRitardoOra = ordini.filter((o) => inRitardo(o, Date.now()));
@@ -101,6 +138,11 @@ export async function elenco(ctx) {
   return h("section", {},
     h("div", { class: "testata" }, h("h2", {}, "Fatture"),
       ctx.titolare ? h("button", { type: "button", class: "primario", onclick: () => scegliFile.click() }, "＋ Carica una fattura") : null),
+    ctx.titolare ? h("p", { class: "nota" }, h("a", { href: "#/posta" }, "Fatture dalla posta"),
+      posta.fatture ? " · " + posta.fatture + (posta.fatture === 1 ? " nuova fattura arrivata per posta" : " nuove fatture arrivate per posta") : "",
+      posta.scartate ? " · " + posta.scartate + (posta.scartate === 1 ? " allegato scartato" : " allegati scartati") : "",
+      posta.restano ? " · altri " + posta.restano + " da guardare: riapri questa pagina" : "",
+      erroreposta ? " · la posta non si è potuta guardare (" + erroreposta + ")" : "") : null,
     scegliFile, stato, errore,
     ctx.titolare ? h("p", { class: "nota" }, "Metro: il PDF della fattura. Tutti gli altri fornitori: il file XML della fattura elettronica.") : null,
     bozza ? h("p", { class: "nota avviso" }, "Stavi rivedendo la fattura " + bozza.testata.numero + ": ",
@@ -145,7 +187,8 @@ function perAnni(fatture, nomi) {
     h("strong", {}, (nomi.get(f.fornitore_id) || "Fornitore") + " " + f.numero),
     bolloStato(f),
     h("span", { class: "numero" }, f.imponibile == null ? "" : euro(f.imponibile)),
-    h("span", { class: "nota" }, "del " + giorno(f.data) + (f.origine === "importazione" ? " · caricata nel vecchio gestionale" : ""))));
+    h("span", { class: "nota" }, "del " + giorno(f.data) + (f.origine === "importazione" ? " · caricata nel vecchio gestionale" : "")
+      + (f.origine === "posta" && f.stato === "da_caricare" ? " · arrivata per posta: aprila per caricarla" : ""))));
   // Le fatture arrivano già dalla più recente: anni e mesi restano in quell'ordine.
   return h("div", { class: "tendine" }, Array.from(anni.entries()).map(([anno, mesi], ia) =>
     tendina(anno, ia === 0, "anno", anno, Array.from(mesi.values()).flat(),
@@ -328,6 +371,17 @@ export async function scheda(ctx, id, ridisegna) {
   try { righe = JSON.parse(f.righe || "[]"); } catch (e) { righe = []; }
   const vivi = await ctx.dati.carichiDiFattura(f.id);
   const errore = h("p", { class: "errore", role: "alert" });
+  // Se la fattura è arrivata per posta, il suo file è nella cassetta: la si rivede e carica da qui, senza cercarlo.
+  const arrivo = f.stato !== "caricata" && ctx.titolare ? (await ctx.dati.posta()).find((p) => p.fattura_id === f.id) : null;
+  const rivediDallaPosta = arrivo ? h("button", { type: "button", class: "primario", onclick: async (ev) => {
+    errore.textContent = "";
+    ev.target.disabled = true;
+    try {
+      const letto = await leggiFile(ctx, daBase64(await ctx.dati.filePosta(arrivo.id)), arrivo.nome_file);
+      await preparaBozza(ctx, letto, arrivo.nome_file, "posta");
+      location.hash = "#/fatture/rivedi";
+    } catch (e) { errore.textContent = e.message || "Non riesco ad aprire il file arrivato per posta."; ev.target.disabled = false; }
+  } }, "Rivedi e carica") : null;
   return h("section", {},
     h("div", { class: "testata" }, h("h2", {}, "Fattura " + (fornitore ? fornitore.nome : "") + " " + f.numero), bolloStato(f)),
     h("ul", { class: "voci" },
@@ -335,7 +389,10 @@ export async function scheda(ctx, id, ridisegna) {
       h("li", { class: "voce" }, h("span", {}, "Imponibile"), h("strong", {}, euro(f.imponibile))),
       h("li", { class: "voce" }, h("span", {}, "Righe entrate in magazzino"), h("strong", {}, f.origine === "importazione" ? "nel vecchio gestionale" : String(vivi.length)))),
     f.origine === "importazione" ? h("p", { class: "nota" }, "Questa fattura è stata caricata nel vecchio gestionale: i suoi arrivi sono già nei movimenti di ogni articolo. È qui perché non venga caricata una seconda volta.") : null,
-    f.stato === "da_caricare" ? h("p", { class: "nota avviso" }, "Questa fattura non è ancora entrata in magazzino. Per caricarla, torna a Fatture e carica il suo file.") : null,
+    f.stato === "da_caricare" ? h("p", { class: "nota avviso" }, arrivo
+      ? "Arrivata per posta" + (arrivo.mittente ? " da " + mittenteBreve(arrivo.mittente) : "") + " e non ancora entrata in magazzino."
+      : "Questa fattura non è ancora entrata in magazzino. Per caricarla, torna a Fatture e carica il suo file.") : null,
+    rivediDallaPosta ? h("div", { class: "azioni" }, rivediDallaPosta) : null,
     f.stato === "annullata" ? h("p", { class: "nota avviso" }, "Il carico di questa fattura è stato annullato: la merce non conta in magazzino. Per rifarlo, carica di nuovo il file.") : null,
     righe.length ? h("ul", { class: "lista" }, righe.map((r) => {
       const a = r.articolo_id ? perId.get(r.articolo_id) : null;

@@ -411,6 +411,38 @@ export function creaDati(archivioVero, ristoranteId, copia, spazio) {
       return vivi.length;
     },
 
+    // ----- la cassetta della posta (non sta nella copia sul dispositivo: si legge dal vivo, e serve la rete) -----
+    // Gli allegati arrivati per posta, dal più recente. Senza rete: nessuno, e si riprova dopo.
+    async posta() {
+      try { return await archivioVero.leggi("posta_arrivata", qui, "creato_il.desc"); }
+      catch (e) { if (e.tipo === "rete") return []; throw e; }
+    },
+    async filePosta(id) {
+      const r = await archivioVero.leggi("posta_file", { id: id, ristorante_id: ristoranteId });
+      if (!r.length) throw new ErroreDato("Non trovo più il file di questa email.");
+      return r[0].contenuto;
+    },
+    segnaPosta(id, cambi) { return archivioVero.modifica("posta_arrivata", { id: id, ristorante_id: ristoranteId }, cambi); },
+    // Una fattura riconosciuta nella posta entra in elenco come «arrivata, da caricare». Se c'è già, resta quella.
+    async registraArrivata(testata) {
+      const gia = carico.trovaFattura(await tutta("fatture"), testata.fornitore_id, testata.numero, testata.data);
+      if (gia) return gia;
+      if (!String(testata.numero || "").trim() || !/^\d{4}-\d{2}-\d{2}$/.test(String(testata.data || ""))) {
+        throw new ErroreDato("Fattura senza numero o senza data: non posso riconoscerla.");
+      }
+      const r = await archivio.inserisci("fatture", Object.assign({ id: nuovoId(), fornitore_id: testata.fornitore_id,
+        numero: String(testata.numero).trim(), data: testata.data, imponibile: testata.imponibile == null ? null : testata.imponibile,
+        stato: "da_caricare", origine: "posta", impronta: testata.impronta || "", righe: "[]" }, qui));
+      return r[0];
+    },
+    // La chiave del raccoglitore: quella attiva (senza il segreto, che l'archivio non conserva), crearla, spegnerla.
+    async chiavePosta() {
+      const r = await archivioVero.leggi("chiavi_posta", qui, "creato_il.desc");
+      return r.find((k) => k.attiva) || null;
+    },
+    creaChiavePosta() { return archivioVero.funzione("crea_chiave_posta", { r: ristoranteId }); },
+    spegniChiavePosta(id) { return archivioVero.modifica("chiavi_posta", { id: id, ristorante_id: ristoranteId }, { attiva: false }); },
+
     // ----- ordini ai fornitori -----
     async ordini() {
       return (await tutta("ordini")).slice().sort((x, y) => String(y.inviato_il).localeCompare(String(x.inviato_il)));

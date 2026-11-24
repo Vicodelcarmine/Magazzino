@@ -19,6 +19,7 @@ import * as attesa from "./schermate/attesa.js";
 import * as fatture from "./schermate/fatture.js";
 import * as casa from "./schermate/casa.js";
 import * as ordini from "./schermate/ordini.js";
+import * as posta from "./schermate/posta.js";
 
 const radice = document.getElementById("app");
 // Quale archivio: quello scelto alla schermata di accesso, altrimenti il predefinito.
@@ -163,7 +164,7 @@ function cornice(sezione, contenuto) {
         tastoEsci())),
     // Nella Home il menu in basso non serve (i riquadri portano già ovunque); nelle altre pagine resta, per muoversi senza tornare alla Home.
     sezione === "casa" ? null : h("nav", { class: "principale" }, VOCI.map((v) => {
-      const qui = v[0] === sezione || (v[0] === "piatti" && inAnagrafica(sezione)) || (v[0] === "spesa" && (sezione === "ordini" || sezione === "ordine-nuovo"));
+      const qui = v[0] === sezione || (v[0] === "piatti" && inAnagrafica(sezione)) || (v[0] === "spesa" && (sezione === "ordini" || sezione === "ordine-nuovo")) || (v[0] === "fatture" && sezione === "posta");
       return h("a", { href: "#/" + v[0], class: "voce-menu" + (qui ? " qui" : "") }, v[1]);
     })),
     inAnagrafica(sezione) ? h("nav", { class: "secondario" }, ANAGRAFICA.map((v) =>
@@ -211,6 +212,7 @@ async function naviga() {
     else if (sezione === "fatture") vista = id ? await fatture.scheda(ctx, id, naviga) : await fatture.elenco(ctx);
     else if (sezione === "ordine-nuovo") vista = await ordini.nuovo(ctx, id);
     else if (sezione === "ordini") vista = id ? await ordini.scheda(ctx, id, naviga) : await ordini.elenco(ctx);
+    else if (sezione === "posta") vista = await posta.pagina(ctx, nomeArchivio, naviga);
     else if (sezione === "attesa") vista = await attesa.pagina(ctx, naviga);
     else if (sezione === "trasloco") vista = await trasloco.pagina(ctx, archivio, nomeArchivio);
     else if (sezione === "articoli") vista = id ? await articoli.scheda(ctx, id) : await articoli.elenco(ctx);
