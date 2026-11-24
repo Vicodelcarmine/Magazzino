@@ -160,7 +160,8 @@ function cornice(sezione, contenuto) {
         h("button", { class: "leggero", onclick: () => { ricordaPreferito(null); ctx = null; storia.azzera(); parti(); } },
           "Cambia ristorante"),
         tastoEsci())),
-    h("nav", { class: "principale" }, VOCI.map((v) => {
+    // Nella Home il menu in basso non serve (i riquadri portano già ovunque); nelle altre pagine resta, per muoversi senza tornare alla Home.
+    sezione === "casa" ? null : h("nav", { class: "principale" }, VOCI.map((v) => {
       const qui = v[0] === sezione || (v[0] === "piatti" && inAnagrafica(sezione));
       return h("a", { href: "#/" + v[0], class: "voce-menu" + (qui ? " qui" : "") }, v[1]);
     })),
