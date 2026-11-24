@@ -24,10 +24,13 @@ const PREDEFINITI = {
   movimenti: { articolo_id: null, piatto_id: null, annulla_id: null, quantita: null, importo_unitario: null,
     fornitore_id: null, qta_confezione: null, acquisto_diretto: false, origine: "manuale", riferimento: "", nota: "",
     dispositivo: "" },
+  abbinamenti_fornitore: { descrizione: "", articolo_id: null, salta: false, contenuto: null },
+  fatture: { imponibile: null, stato: "da_caricare", origine: "pdf", impronta: "", righe: "[]", nota: "" },
 };
 const DATE = { fornitori: ["creato_il", "aggiornato_il"], articoli: ["creato_il", "aggiornato_il"],
   piatti: ["creato_il", "aggiornato_il"], collegamenti_piatto: ["creato_il"], prezzi: ["creato_il"],
-  righe_ricetta: ["valida_dal", "creato_il"], movimenti: ["registrato_il"] };
+  righe_ricetta: ["valida_dal", "creato_il"], movimenti: ["registrato_il"],
+  abbinamenti_fornitore: ["creato_il", "aggiornato_il"], fatture: ["creato_il", "aggiornato_il"] };
 
 export function conPredefiniti(tabella, riga, quando) {
   const out = Object.assign({}, PREDEFINITI[tabella] || {}, riga);
@@ -124,6 +127,7 @@ export function descrivi(op) {
     const nomi = { conteggio: "Conteggio", carico: "Arrivo di merce", correzione: "Merce buttata o corretta", annullamento: "Annullamento di un movimento" };
     return (nomi[r.tipo] || "Movimento") + (r.quantita != null ? " (" + Math.abs(r.quantita) + ")" : "");
   }
-  const cosa = { articoli: "articolo", piatti: "piatto", fornitori: "fornitore", righe_ricetta: "riga di ricetta", prezzi: "prezzo", collegamenti_piatto: "codice di cassa" }[op.tabella] || op.tabella;
+  const cosa = { articoli: "articolo", piatti: "piatto", fornitori: "fornitore", righe_ricetta: "riga di ricetta", prezzi: "prezzo", collegamenti_piatto: "codice di cassa",
+    abbinamenti_fornitore: "codice di un fornitore", fatture: "fattura" }[op.tabella] || op.tabella;
   return (op.tipo === "inserisci" ? "Nuovo " : "Modifica a ") + cosa + (r.nome ? " «" + r.nome + "»" : "");
 }

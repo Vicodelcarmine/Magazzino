@@ -16,6 +16,7 @@ import * as conti from "./schermate/conti.js";
 import * as andamento from "./schermate/andamento.js";
 import * as trasloco from "./schermate/trasloco.js";
 import * as attesa from "./schermate/attesa.js";
+import * as fatture from "./schermate/fatture.js";
 
 const radice = document.getElementById("app");
 // Quale archivio: quello scelto alla schermata di accesso, altrimenti il predefinito.
@@ -123,9 +124,9 @@ async function parti() {
   } catch (e) { guasto(e); }
 }
 
-// Il menu principale ha quattro voci; «Anagrafica» ne apre altre quattro.
+// Il menu principale; «Anagrafica» apre altre quattro voci.
 const CASA = "#/magazzino";
-const VOCI = [["magazzino", "Magazzino"], ["spesa", "Spesa"], ["costi", "Costi"], ["andamento", "Andamento"], ["piatti", "Anagrafica"]];
+const VOCI = [["magazzino", "Magazzino"], ["fatture", "Fatture"], ["spesa", "Spesa"], ["costi", "Costi"], ["andamento", "Andamento"], ["piatti", "Anagrafica"]];
 const ANAGRAFICA = [["piatti", "Piatti"], ["preparazioni", "Preparazioni"], ["articoli", "Articoli"], ["fornitori", "Fornitori"]];
 const inAnagrafica = (sezione) => ANAGRAFICA.some((v) => v[0] === sezione);
 
@@ -200,6 +201,8 @@ async function naviga() {
     else if (sezione === "spesa") vista = await conti.spesa(ctx);
     else if (sezione === "costi") vista = await conti.costi(ctx);
     else if (sezione === "andamento") vista = await andamento.pagina(ctx);
+    else if (sezione === "fatture" && id === "rivedi") vista = await fatture.rivedi(ctx);
+    else if (sezione === "fatture") vista = id ? await fatture.scheda(ctx, id, naviga) : await fatture.elenco(ctx);
     else if (sezione === "attesa") vista = await attesa.pagina(ctx, naviga);
     else if (sezione === "trasloco") vista = await trasloco.pagina(ctx, archivio, nomeArchivio);
     else if (sezione === "articoli") vista = id ? await articoli.scheda(ctx, id) : await articoli.elenco(ctx);

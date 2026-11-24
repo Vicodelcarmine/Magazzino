@@ -6,6 +6,7 @@ import { codiceNuovo } from "./codici.js";
 import { datiEsempio, ORDINE_ESEMPIO } from "./demo.js";
 import { COPIATE, allineaTabella } from "./allinea.js";
 import { accoda, applica, inCoda, riapplica, spedisci } from "./coda.js";
+import * as carico from "./fatture/carico.js";
 
 export class ErroreDato extends Error {}
 
@@ -338,6 +339,69 @@ export function creaDati(archivioVero, ristoranteId, copia, spazio) {
         origine: "manuale", autore_id: archivio.utente().id, nota: "annullato a mano" }, qui));
       await archivio.modifica("prezzi", { origine: "movimento:" + movimentoId, ristorante_id: ristoranteId },
         { annullato_il: new Date().toISOString() });
+    },
+
+    // ----- fatture dei fornitori -----
+    async fatture() {
+      return (await tutta("fatture")).slice().sort((x, y) => String(y.data).localeCompare(String(x.data)) || String(y.numero).localeCompare(String(x.numero)));
+    },
+    async abbinamenti() { return tutta("abbinamenti_fornitore"); },
+    // I movimenti di carico ancora validi (non annullati) nati da una fattura.
+    async carichiDiFattura(fatturaId) {
+      const movimenti = await tutta("movimenti");
+      const annullati = new Set(movimenti.filter((m) => m.tipo === "annullamento").map((m) => m.annulla_id));
+      return movimenti.filter((m) => m.tipo === "carico" && carico.eDellaFattura(m, fatturaId) && !annullati.has(m.id));
+    },
+    // Carica in magazzino una fattura rivista.
+    //  testata: { fornitore_id, fornitoreNome, numero, data, imponibile, impronta, origine }
+    //  righe: quelle di carico.prepara(), con le decisioni prese a schermo.
+    // L'ordine delle scritture è pensato perché un'interruzione a metà non faccia danni: la fattura
+    // nasce «da caricare», diventa «caricata» solo alla fine, e rifacendo il carico le righe già
+    // entrate non si ripetono.
+    async caricaFattura(testata, righe) {
+      if (!testata.fornitore_id) throw new ErroreDato("Manca il fornitore della fattura.");
+      if (!String(testata.numero || "").trim() || !/^\d{4}-\d{2}-\d{2}$/.test(String(testata.data || ""))) {
+        throw new ErroreDato("Non ho letto il numero o la data della fattura: senza non posso riconoscerla la prossima volta.");
+      }
+      const manca = righe.filter((r) => !carico.decisa(r)).length;
+      if (manca) throw new ErroreDato(manca === 1 ? "Resta una riga da decidere: scegli l'articolo e la quantità, oppure saltala."
+        : "Restano " + manca + " righe da decidere: per ognuna scegli l'articolo e la quantità, oppure saltala.");
+      const [fatture, abbinamenti] = await Promise.all([tutta("fatture"), tutta("abbinamenti_fornitore")]);
+      const gia = carico.trovaFattura(fatture, testata.fornitore_id, testata.numero, testata.data);
+      if (gia && gia.stato === "caricata") throw new ErroreDato("Questa fattura è già stata caricata: non la carico due volte.");
+      const id = gia ? gia.id : nuovoId();
+      const fatte = new Set((gia ? await api.carichiDiFattura(id) : []).map((m) => m.riferimento));
+      const piano = carico.componi({ fatturaId: id, ristoranteId: ristoranteId, fornitoreId: testata.fornitore_id,
+        fornitoreNome: testata.fornitoreNome, numero: String(testata.numero).trim(), data: gia ? String(gia.data).slice(0, 10) : testata.data,
+        autoreId: archivio.utente().id, nuovoId: nuovoId }, righe, abbinamenti.map((a) => Object.assign({}, a)), fatte);
+
+      if (piano.abbinamentiNuovi.length) await archivio.inserisci("abbinamenti_fornitore", piano.abbinamentiNuovi);
+      for (const c of piano.abbinamentiCambi) await archivio.modifica("abbinamenti_fornitore", { id: c.id, ristorante_id: ristoranteId }, c.cambi);
+      const corpo = { imponibile: testata.imponibile == null ? null : testata.imponibile, impronta: testata.impronta || "",
+        origine: testata.origine || "pdf", righe: JSON.stringify(piano.righe), stato: "da_caricare" };
+      if (gia) await modifica("fatture", id, corpo);
+      else await archivio.inserisci("fatture", Object.assign({ id: id, fornitore_id: testata.fornitore_id,
+        numero: String(testata.numero).trim(), data: testata.data }, qui, corpo));
+      if (piano.movimenti.length) await archivio.inserisci("movimenti", piano.movimenti);
+      if (piano.prezzi.length) await archivio.inserisci("prezzi", piano.prezzi);
+      await modifica("fatture", id, { stato: "caricata" });
+      return { id: id, caricate: piano.movimenti.length };
+    },
+    // Annulla il carico di una fattura: ogni suo movimento viene annullato (non cancellato) e i
+    // prezzi che aveva portato escono dal confronto. La fattura resta in elenco, segnata «annullata».
+    async annullaFattura(fattura) {
+      const vivi = await api.carichiDiFattura(fattura.id);
+      const adesso = new Date().toISOString();
+      const io = archivio.utente().id;
+      if (vivi.length) {
+        await archivio.inserisci("movimenti", vivi.map((m) => Object.assign({ id: nuovoId(), tipo: "annullamento",
+          annulla_id: m.id, avvenuto_il: adesso, origine: "manuale", autore_id: io, nota: "annullato il carico della fattura " + fattura.numero }, qui)));
+        for (const m of vivi) {
+          await archivio.modifica("prezzi", { origine: "movimento:" + m.id, ristorante_id: ristoranteId }, { annullato_il: adesso });
+        }
+      }
+      await modifica("fatture", fattura.id, { stato: "annullata" });
+      return vivi.length;
     },
 
     // Tutto ciò che serve al motore dei conti, in una volta.

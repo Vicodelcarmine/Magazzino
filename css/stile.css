@@ -183,6 +183,7 @@ nav a.voce-fornitori { border-color: var(--bordo-tasto); }
 nav a.voce-fornitori.qui { background: var(--testo); color: var(--sopra-pieno); }
 
 /* Conferma prima di togliere qualcosa */
+.scelta-in-riga { flex-basis: 100%; }
 .conferma { display: inline-flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
 button.pericolo { background: var(--allarme); border-color: var(--allarme); color: var(--sopra-pieno); }
 

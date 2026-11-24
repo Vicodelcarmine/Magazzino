@@ -6,7 +6,8 @@ import { CONFIG } from "../config.js";
 import { trasloca, completo, TABELLE } from "../trasloco.js";
 
 const NOMI = { fornitori: "Fornitori", articoli: "Articoli", piatti: "Piatti", collegamenti_piatto: "Codici della cassa",
-  righe_ricetta: "Righe di ricetta", prezzi: "Prezzi", movimenti: "Movimenti" };
+  righe_ricetta: "Righe di ricetta", prezzi: "Prezzi", movimenti: "Movimenti",
+  abbinamenti_fornitore: "Codici dei fornitori", fatture: "Fatture" };
 
 export async function pagina(ctx, archivioOnline, nomeArchivio) {
   if (nomeArchivio !== "online") {

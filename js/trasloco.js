@@ -5,7 +5,7 @@
 // Si può rifare senza danni: le righe già arrivate vengono saltate (ogni riga ha la sua identità).
 
 // L'ordine conta: prima ciò a cui le altre righe si collegano.
-export const TABELLE = ["fornitori", "articoli", "piatti", "collegamenti_piatto", "righe_ricetta", "prezzi", "movimenti"];
+export const TABELLE = ["fornitori", "articoli", "piatti", "collegamenti_piatto", "righe_ricetta", "prezzi", "movimenti", "abbinamenti_fornitore", "fatture"];
 const BLOCCO = 500;
 
 // da, a: due archivi (creaArchivio). ristorante: la riga del ristorante di partenza.

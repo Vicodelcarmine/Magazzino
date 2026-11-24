@@ -1,0 +1,245 @@
+// Fatture dei fornitori: caricare un PDF, rivedere le righe, farle entrare in magazzino.
+// Per ora si legge il PDF di Metro; il resto (rivedere, abbinare, caricare, annullare) è uguale
+// per qualunque fornitore e qualunque strada da cui arriverà la fattura.
+import { h, vuoto, conConferma } from "../dom.js";
+import { qta, euro, perCampo, parseNumero } from "../numeri.js";
+import * as metro from "../fatture/metro.js";
+import { leggiTesto } from "../fatture/pdf.js";
+import * as carico from "../fatture/carico.js";
+import { sceltaArticolo } from "./scegli.js";
+import { tipoDi, etichettaArticolo } from "./segni.js";
+
+const giorno = (d) => { const p = String(d || "").slice(0, 10).split("-"); return p.length === 3 ? p[2] + "/" + p[1] + "/" + p[0] : "—"; };
+const STATI = { caricata: ["caricata", "attivo"], da_caricare: ["da caricare", "da_completare"], annullata: ["annullata", "rifiutato"] };
+const bolloStato = (f) => h("span", { class: "bollo " + STATI[f.stato][1] }, STATI[f.stato][0]);
+
+// La fattura che si sta rivedendo. Resta finché non la si carica o non se ne apre un'altra:
+// così si può uscire un attimo (per creare un articolo che manca) e tornare senza rifare tutto.
+let bozza = null;
+
+async function fornitoreMetro(ctx) {
+  const tutti = await ctx.dati.fornitori();
+  const c = tutti.find((f) => String(f.nome).trim().toLowerCase().startsWith("metro"));
+  return c || ctx.dati.salvaFornitore({ nome: "Metro" }, tutti);
+}
+
+async function apri(ctx, file) {
+  const buffer = await file.arrayBuffer();
+  const impronta = metro.impronta(new Uint8Array(buffer));
+  const testo = await leggiTesto(buffer);
+  if (!metro.eMetro(testo)) {
+    throw new Error("Questo PDF non mi sembra una fattura Metro. Per ora leggo solo quelle; le fatture degli altri fornitori arriveranno in XML.");
+  }
+  const lettura = metro.leggi(testo);
+  if (!lettura.ok) throw new Error(lettura.errore || "Non sono riuscito a leggere le righe di questa fattura.");
+  const fornitore = await fornitoreMetro(ctx);
+  const [abbinamenti, articoli, fatture] = await Promise.all([ctx.dati.abbinamenti(), ctx.dati.articoli(), ctx.dati.fatture()]);
+  bozza = {
+    file: file.name, lettura: lettura,
+    testata: { fornitore_id: fornitore.id, fornitoreNome: fornitore.nome, numero: lettura.numero, data: lettura.data,
+      imponibile: lettura.imponibile, impronta: impronta, origine: "pdf" },
+    righe: carico.prepara(lettura, abbinamenti, articoli, fornitore.id),
+    gia: carico.trovaFattura(fatture, fornitore.id, lettura.numero, lettura.data),
+  };
+}
+
+// ---------- elenco ----------
+export async function elenco(ctx) {
+  const [fatture, fornitori] = await Promise.all([ctx.dati.fatture(), ctx.dati.fornitori()]);
+  const nomi = new Map(fornitori.map((f) => [f.id, f.nome]));
+  const stato = h("p", { class: "nota", role: "status" });
+  const errore = h("p", { class: "errore", role: "alert" });
+  const scegliFile = h("input", { type: "file", accept: "application/pdf,.pdf", hidden: true, onchange: async (ev) => {
+    const file = ev.target.files && ev.target.files[0];
+    ev.target.value = "";
+    if (!file) return;
+    errore.textContent = "";
+    stato.textContent = "Leggo «" + file.name + "»…";
+    try {
+      await apri(ctx, file);
+      location.hash = "#/fatture/rivedi";
+    } catch (e) {
+      stato.textContent = "";
+      errore.textContent = e.message || "Non sono riuscito a leggere il file.";
+    }
+  } });
+  const daCaricare = fatture.filter((f) => f.stato === "da_caricare");
+  return h("section", {},
+    h("div", { class: "testata" }, h("h2", {}, "Fatture"),
+      ctx.titolare ? h("button", { type: "button", class: "primario", onclick: () => scegliFile.click() }, "＋ Carica una fattura Metro (PDF)") : null),
+    scegliFile, stato, errore,
+    bozza ? h("p", { class: "nota avviso" }, "Stavi rivedendo la fattura " + bozza.testata.numero + ": ",
+      h("a", { href: "#/fatture/rivedi" }, "riprendila da dove eri")) : null,
+    daCaricare.length ? h("p", { class: "nota avviso" }, daCaricare.length === 1 ? "C'è una fattura arrivata e non ancora caricata."
+      : "Ci sono " + daCaricare.length + " fatture arrivate e non ancora caricate.") : null,
+    fatture.length ? h("ul", { class: "lista" }, fatture.map((f) =>
+      h("li", {}, h("a", { class: "riga" + (f.stato === "da_caricare" ? " allarme" : ""), href: "#/fatture/" + f.id },
+        h("strong", {}, (nomi.get(f.fornitore_id) || "Fornitore") + " " + f.numero),
+        bolloStato(f),
+        h("span", { class: "numero" }, f.imponibile == null ? "" : euro(f.imponibile)),
+        h("span", { class: "nota" }, "del " + giorno(f.data) + (f.origine === "importazione" ? " · caricata nel vecchio gestionale" : ""))))))
+      : vuoto("Ancora nessuna fattura. Carica il primo PDF col tasto qui sopra."));
+}
+
+// ---------- revisione della fattura appena letta ----------
+export async function rivedi(ctx) {
+  if (!bozza) return vuoto("Non c'è nessuna fattura in revisione: torna a Fatture e carica un PDF.");
+  const b = bozza;
+  const articoli = (await ctx.dati.articoli()).filter((a) => a.attivo !== false && !a.prodotto_in_cucina);
+  const perId = new Map(articoli.map((a) => [a.id, a]));
+  const abbinamenti = carico.indice(await ctx.dati.abbinamenti(), b.testata.fornitore_id);
+  const giaCaricata = b.gia && b.gia.stato === "caricata";
+  const errore = h("p", { class: "errore", role: "alert" });
+  const conto = h("p", { class: "nota", role: "status" });
+  const conferma = h("button", { type: "button", class: "primario" }, "Carica in magazzino");
+
+  function aggiornaConto() {
+    const r = carico.riepilogo(b.righe);
+    conto.textContent = [
+      r.carica + (r.carica === 1 ? " riga entra" : " righe entrano") + " in magazzino (" + euro(r.valore) + ")",
+      r.salta ? r.salta + (r.salta === 1 ? " saltata" : " saltate") + " (" + euro(r.saltato) + ")" : null,
+      r.daDecidere ? r.daDecidere + " ancora da decidere" : null,
+    ].filter(Boolean).join(" · ");
+    conto.className = "nota" + (r.daDecidere ? " avviso" : "");
+    conferma.disabled = giaCaricata || r.daDecidere > 0 || !ctx.titolare;
+  }
+
+  function disegnaRiga(r, li) {
+    const quanti = r.leggibile ? qta(r.qtaFattura) + " " + (r.udmFattura || "") + " · " + euro(r.importo)
+      + (r.sconto ? " (tolto lo sconto di fine fattura: " + euro(r.sconto) + ")" : "") : "";
+    const ridisegna = () => { disegnaRiga(r, li); aggiornaConto(); };
+    const testa = [h("strong", {}, r.descrizione || "Riga " + r.n), h("span", { class: "numero" }, quanti)];
+    if (!r.leggibile) {
+      li.className = "riga allarme";
+      li.replaceChildren(...testa, h("span", { class: "nota avviso" }, "Non sono riuscito a leggere questa riga (" + r.errore
+        + "). Guarda la fattura: se è merce di magazzino, caricala a mano dalla pagina dell'articolo."),
+        r.azione === "salta" ? h("span", { class: "nota" }, "Presa visione: la fattura si carica senza questa riga.")
+          : h("button", { type: "button", onclick: () => { r.azione = "salta"; ridisegna(); } }, "Ho capito, vai avanti senza"));
+      return;
+    }
+    if (r.azione === "salta") {
+      li.className = "riga spento";
+      li.replaceChildren(...testa,
+        h("span", { class: "nota" }, r.saltaSempre ? "Non è merce di magazzino: non viene caricata, né ora né le prossime volte." : "Questa volta non viene caricata."),
+        h("button", { type: "button", class: "leggero", onclick: () => { r.azione = "decidi"; r.saltaSempre = false;
+          if (r.articolo_id && Number(r.quantita) > 0) r.azione = "carica"; ridisegna(); } }, "Caricala invece"));
+      return;
+    }
+    const articolo = r.articolo_id ? perId.get(r.articolo_id) : null;
+    const pronta = carico.decisa(r);
+    li.className = "riga tipo-articolo" + (pronta ? "" : " allarme");
+    const salti = h("span", { class: "dose" },
+      h("button", { type: "button", class: "leggero", onclick: () => { r.azione = "salta"; r.saltaSempre = false; ridisegna(); } }, "Salta questa volta"),
+      h("button", { type: "button", class: "leggero", onclick: () => { r.azione = "salta"; r.saltaSempre = true; ridisegna(); } }, "Non è merce di magazzino"));
+    if (!articolo) {
+      const guscio = h("div", { class: "scelta-in-riga" });
+      const apriScelta = h("button", { type: "button", class: "primario", onclick: () => {
+        guscio.replaceChildren(sceltaArticolo(articoli, (a) => {
+          if (!a) return;
+          r.articolo_id = a.id;
+          Object.assign(r, carico.proponi(r, a, abbinamenti.get(carico.chiaveCodice(r.codice))));
+          r.azione = "carica";
+          ridisegna();
+        }));
+        const cerca = guscio.querySelector("input[type=search]");
+        if (cerca) cerca.focus();
+      } }, "Scegli l'articolo di magazzino");
+      guscio.append(apriScelta);
+      li.replaceChildren(...testa, h("span", { class: "nota avviso" }, "Codice mai visto: dimmi a quale articolo corrisponde. Lo ricorderò."), guscio, salti);
+      return;
+    }
+    const prezzo = h("span", { class: "nota" });
+    const aggiornaPrezzo = () => {
+      const n = Number(r.quantita);
+      prezzo.textContent = n > 0 ? "= " + euro(r.importo / n) + " al " + articolo.udm : "";
+    };
+    const campo = h("input", { class: "stretto", inputmode: "decimal", autocomplete: "off", value: perCampo(r.quantita, 4),
+      "aria-label": "Quanta merce entra, in " + articolo.udm, oninput: (ev) => {
+        const n = parseNumero(ev.target.value);
+        r.quantita = n != null && n > 0 ? n : null;
+        r.fonte = "scritta";
+        r.azione = "carica";
+        li.classList.toggle("allarme", !carico.decisa(r));
+        aggiornaPrezzo(); aggiornaConto();
+      } });
+    const spiega = { fattura: "peso scritto in fattura", ricordata: "come l'ultima volta", scritta: "",
+      proposta: "letto dalla descrizione: controlla che sia giusto, poi lo ricordo", "": r.pesoVariabile ? "la fattura dà il peso, l'articolo si conta a " + articolo.udm + ": scrivi quanti ne sono arrivati"
+        : "scrivi quanta merce entra: poi lo ricordo" }[r.fonte];
+    aggiornaPrezzo();
+    li.replaceChildren(...testa,
+      h("span", { class: "scelto" }, h("span", { class: "riga-distinta tipo-" + tipoDi(articolo) }, etichettaArticolo(articolo)),
+        h("button", { type: "button", class: "leggero", onclick: () => { r.articolo_id = null; r.quantita = null; r.fonte = ""; r.azione = "decidi"; ridisegna(); } }, "Cambia")),
+      h("span", { class: "dose" }, "entrano", campo, h("strong", {}, articolo.udm), prezzo),
+      spiega ? h("span", { class: "nota" + (r.fonte === "proposta" || r.fonte === "" ? " avviso" : "") }, spiega) : null,
+      salti);
+  }
+
+  const lista = h("ul", { class: "lista" }, b.righe.map((r) => { const li = h("li", {}); disegnaRiga(r, li); return li; }));
+  conferma.addEventListener("click", async () => {
+    errore.textContent = "";
+    conferma.disabled = true;
+    try {
+      const esito = await ctx.dati.caricaFattura(b.testata, b.righe);
+      bozza = null;
+      location.hash = "#/fatture/" + esito.id;
+    } catch (e) {
+      errore.textContent = e.message || "Il carico non è riuscito.";
+      aggiornaConto();
+    }
+  });
+  aggiornaConto();
+
+  const l = b.lettura;
+  return h("section", {},
+    h("div", { class: "testata" }, h("h2", {}, "Fattura " + b.testata.fornitoreNome + " " + (b.testata.numero || "senza numero"))),
+    h("ul", { class: "voci" },
+      h("li", { class: "voce" }, h("span", {}, "Data"), h("strong", {}, giorno(b.testata.data))),
+      h("li", { class: "voce" }, h("span", {}, "Imponibile scritto in fattura"), h("strong", {}, euro(l.imponibile))),
+      h("li", { class: "voce" }, h("span", {}, "Somma delle righe lette" + (l.totaleSconti ? " (tolti " + euro(l.totaleSconti) + " di sconti)" : "")),
+        h("strong", { class: l.quadra ? "" : "rosso" }, euro(l.nettoRighe) + (l.quadra ? " ✓ torna" : " ✗ non torna")))),
+    l.quadra ? null : h("p", { class: "nota avviso" }, "La somma delle righe non torna con l'imponibile: può mancare una riga. Controlla la fattura prima di caricare."),
+    (l.avvisi || []).filter((a) => !/non torna con l'imponibile/.test(a)).map((a) => h("p", { class: "nota avviso" }, a)),
+    giaCaricata ? h("p", { class: "errore" }, "Questa fattura risulta già caricata"
+      + (b.gia.origine === "importazione" ? " nel vecchio gestionale" : "") + ": non la carico due volte. ",
+      h("a", { href: "#/fatture/" + b.gia.id }, "Aprila")) : null,
+    ctx.titolare ? null : h("p", { class: "nota avviso" }, "Solo il titolare può caricare le fatture."),
+    h("h3", {}, "Righe (" + b.righe.length + ")"),
+    lista, conto, errore,
+    h("div", { class: "azioni" }, conferma,
+      conConferma("Lascia perdere", "Sì, chiudi senza caricare", () => { bozza = null; location.hash = "#/fatture"; })));
+}
+
+// ---------- una fattura già conosciuta ----------
+export async function scheda(ctx, id, ridisegna) {
+  const [fatture, fornitori, articoli] = await Promise.all([ctx.dati.fatture(), ctx.dati.fornitori(), ctx.dati.articoli()]);
+  const f = fatture.find((x) => x.id === id);
+  if (!f) return vuoto("Fattura non trovata.");
+  const fornitore = fornitori.find((x) => x.id === f.fornitore_id);
+  const perId = new Map(articoli.map((a) => [a.id, a]));
+  let righe = [];
+  try { righe = JSON.parse(f.righe || "[]"); } catch (e) { righe = []; }
+  const vivi = await ctx.dati.carichiDiFattura(f.id);
+  const errore = h("p", { class: "errore", role: "alert" });
+  return h("section", {},
+    h("div", { class: "testata" }, h("h2", {}, "Fattura " + (fornitore ? fornitore.nome : "") + " " + f.numero), bolloStato(f)),
+    h("ul", { class: "voci" },
+      h("li", { class: "voce" }, h("span", {}, "Data"), h("strong", {}, giorno(f.data))),
+      h("li", { class: "voce" }, h("span", {}, "Imponibile"), h("strong", {}, euro(f.imponibile))),
+      h("li", { class: "voce" }, h("span", {}, "Righe entrate in magazzino"), h("strong", {}, f.origine === "importazione" ? "nel vecchio gestionale" : String(vivi.length)))),
+    f.origine === "importazione" ? h("p", { class: "nota" }, "Questa fattura è stata caricata nel vecchio gestionale: i suoi arrivi sono già nei movimenti di ogni articolo. È qui perché non venga caricata una seconda volta.") : null,
+    f.stato === "da_caricare" ? h("p", { class: "nota avviso" }, "Questa fattura non è ancora entrata in magazzino. Per caricarla, torna a Fatture e carica il suo PDF.") : null,
+    f.stato === "annullata" ? h("p", { class: "nota avviso" }, "Il carico di questa fattura è stato annullato: la merce non conta in magazzino. Per rifarlo, carica di nuovo il PDF.") : null,
+    righe.length ? h("ul", { class: "lista" }, righe.map((r) => {
+      const a = r.articolo_id ? perId.get(r.articolo_id) : null;
+      return h("li", { class: "riga" + (r.azione === "carica" ? " tipo-articolo" : " spento") },
+        h("strong", {}, r.descrizione), h("span", { class: "numero" }, r.importo == null ? "" : euro(r.importo)),
+        h("span", { class: "nota" }, r.azione === "carica"
+          ? "→ " + (a ? a.nome : "articolo") + ": " + qta(r.quantita) + " " + (a ? a.udm : "")
+          : "non caricata"));
+    })) : null,
+    errore,
+    ctx.titolare && f.stato === "caricata" && f.origine !== "importazione" ? h("div", { class: "azioni" },
+      conConferma("Annulla il carico di questa fattura", "Sì, annulla tutto il carico", async () => {
+        try { await ctx.dati.annullaFattura(f); ridisegna(); } catch (e) { errore.textContent = e.message; }
+      })) : null);
+}
