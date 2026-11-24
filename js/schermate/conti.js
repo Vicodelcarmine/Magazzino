@@ -2,7 +2,7 @@
 // I numeri non sono salvati da nessuna parte: si ricalcolano ogni volta dal registro dei movimenti.
 import { h, campo, modulo, scelta, vuoto, conConferma } from "../dom.js";
 import { qta, euro } from "../numeri.js";
-import { filtra } from "../cerca.js";
+import { filtra, categorieCon } from "../cerca.js";
 import * as motore from "../motore.js";
 import { barraCategorie } from "./scegli.js";
 import { categoria as segnoCategoria } from "./segni.js";
@@ -28,6 +28,86 @@ function sfridoTesto(p) {
   if (p.fonteSfrido !== "inventari") return "sfrido non ancora misurato";
   const extra = p.limiteSfrido ? " (al limite: da controllare)" : "";
   return "sfrido " + qta(p.coef) + extra;
+}
+
+// ---------- DEMO: due modi di vedere il Magazzino senza la pagina lunghissima ----------
+// Provvisorie: servono al titolare per scegliere. Quella scelta sostituirà la pagina Magazzino, l'altra sparisce.
+//  a = i reparti come tendine, tutte chiuse: se ne apre una alla volta;
+//  b = i reparti come icone; entrati in un reparto, gli altri restano sotto come tendine.
+const ICONE = [["carne", "🥩"], ["pesce", "🐟"], ["latticin", "🧀"], ["formagg", "🧀"], ["salum", "🥓"], ["verdur", "🥬"], ["frutta", "🥬"],
+  ["farin", "🌾"], ["past", "🌾"], ["dolc", "🍰"], ["barattol", "🥫"], ["sals", "🥫"], ["oli", "🫒"], ["spezi", "🌿"], ["uov", "🥚"],
+  ["soft", "🥤"], ["bevand", "🥤"], ["spirit", "🍸"], ["vin", "🍷"], ["birr", "🍺"], ["non food", "🧴"], ["material", "🧴"]];
+function iconaDi(nome) {
+  const n = String(nome || "").toLowerCase();
+  const t = ICONE.find((x) => n.includes(x[0]));
+  return t ? t[1] : "📦";
+}
+const ricordoDemo = { a: "", b: "" }; // il reparto lasciato aperto, per ritrovarlo tornando indietro
+
+export async function magazzinoDemo(ctx, quale) {
+  const b = quale === "b";
+  const c = await conti(ctx);
+  const tutti = motore.cruscotto(c).filter((p) => p.attivo);
+  const reparti = categorieCon(tutti).map((r) => {
+    const suoi = filtra(tutti, "", r.chiave);
+    return Object.assign({}, r, { articoli: suoi, sottoZero: suoi.filter((p) => p.giacenzaNegativa).length });
+  });
+  let aperto = ricordoDemo[quale] || "", testo = "";
+  const corpo = h("div", {});
+
+  const riga = (p) => h("li", {}, h("a", { class: "riga tipo-articolo" + (p.giacenzaNegativa ? " allarme" : ""), href: "#/magazzino/" + p.id },
+    h("strong", {}, p.nome),
+    h("span", { class: "numero" + (p.giacenzaNegativa ? " rosso" : "") }, qta(p.giacenza) + " " + p.udm),
+    h("span", { class: "nota" }, [
+      p.giacenzaNegativa ? "sotto zero: va ricontato" : (p.autonomia == null ? null : "basta per " + qta(Math.floor(p.autonomia)) + " giorni"),
+      "contato: " + giorno(p.contatoIl)].filter(Boolean).join(" · "))));
+  const segni = (r) => [
+    h("span", { class: "nota" }, r.quante + (r.quante === 1 ? " articolo" : " articoli")),
+    r.sottoZero ? h("span", { class: "bollo rifiutato" }, r.sottoZero + " sotto zero") : null];
+
+  function tendine() {
+    return h("div", { class: "tendine" }, reparti.map((r) => {
+      const d = h("details", { class: "tendina mese reparto", open: aperto === r.chiave },
+        h("summary", {}, h("span", { class: "icona" }, iconaDi(r.nome)), h("strong", {}, r.nome), segni(r)),
+        h("ul", { class: "lista" }, r.articoli.map(riga)));
+      // Una sola aperta alla volta: aprendone una, le altre si chiudono e la pagina resta corta.
+      d.addEventListener("toggle", () => {
+        if (d.open && aperto !== r.chiave) { aperto = r.chiave; ricordoDemo[quale] = aperto; disegna(); }
+        else if (!d.open && aperto === r.chiave) { aperto = ""; ricordoDemo[quale] = ""; }
+      });
+      return d;
+    }));
+  }
+  function icone() {
+    return h("div", { class: "griglia-reparti" }, reparti.map((r) =>
+      h("button", { type: "button", class: "reparto-icona" + (r.sottoZero ? " allarme" : ""), onclick: () => { aperto = r.chiave; ricordoDemo[quale] = aperto; disegna(); window.scrollTo(0, 0); } },
+        h("span", { class: "icona" }, iconaDi(r.nome)), h("strong", {}, r.nome),
+        h("span", { class: "nota" }, r.quante + (r.quante === 1 ? " articolo" : " articoli")),
+        r.sottoZero ? h("span", { class: "bollo rifiutato" }, r.sottoZero + " sotto zero") : null)));
+  }
+  function disegna() {
+    if (testo.trim()) { // scrivendo si cerca in tutti i reparti insieme
+      const trovati = filtra(tutti, testo, "");
+      corpo.replaceChildren(trovati.length ? h("ul", { class: "lista" }, trovati.map(riga)) : vuoto("Nessun articolo così."));
+    } else if (b && !aperto) {
+      corpo.replaceChildren(icone());
+    } else {
+      corpo.replaceChildren(...[
+        b ? h("button", { type: "button", class: "leggero", onclick: () => { aperto = ""; ricordoDemo[quale] = ""; disegna(); } }, "‹ Tutti i reparti") : null,
+        tendine()].filter(Boolean));
+      const ora = corpo.querySelector("details[open]");
+      if (ora && ora.getBoundingClientRect().top < 0) ora.scrollIntoView();
+    }
+  }
+  disegna();
+  return h("section", { class: "tipo-articolo" },
+    h("div", { class: "testata" }, h("h2", {}, "Magazzino — demo " + (b ? "2: icone" : "1: tendine"))),
+    h("p", { class: "nota avviso" }, "Pagina di prova coi tuoi dati veri. ",
+      h("a", { href: b ? "#/demo/a" : "#/demo/b" }, b ? "Guarda la demo 1 (tendine)" : "Guarda la demo 2 (icone)"),
+      " · ", h("a", { href: "#/magazzino" }, "Torna alla pagina di adesso")),
+    h("input", { type: "search", placeholder: "Cerca in tutti i reparti", "aria-label": "Cerca articolo",
+      oninput: (ev) => { testo = ev.target.value; disegna(); } }),
+    corpo);
 }
 
 // ---------- Magazzino ----------
@@ -61,6 +141,8 @@ export async function magazzino(ctx) {
   disegna();
   return h("section", { class: "tipo-articolo" },
     h("div", { class: "testata" }, h("h2", {}, "Magazzino")),
+    h("p", { class: "nota avviso" }, "In prova, due modi nuovi di vedere questa pagina: ",
+      h("a", { href: "#/demo/a" }, "Demo 1 (tendine)"), " · ", h("a", { href: "#/demo/b" }, "Demo 2 (icone)")),
     aggiornamento(c),
     h("div", { class: "riquadri" },
       riquadro(String(tutti.length), "articoli attivi"),

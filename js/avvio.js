@@ -158,7 +158,7 @@ function cornice(sezione, contenuto) {
           "Cambia ristorante"),
         tastoEsci())),
     h("nav", { class: "principale" }, VOCI.map((v) => {
-      const qui = v[0] === sezione || (v[0] === "piatti" && inAnagrafica(sezione));
+      const qui = v[0] === sezione || (v[0] === "piatti" && inAnagrafica(sezione)) || (v[0] === "magazzino" && sezione === "demo");
       return h("a", { href: "#/" + v[0], class: "voce-menu" + (qui ? " qui" : "") }, v[1]);
     })),
     inAnagrafica(sezione) ? h("nav", { class: "secondario" }, ANAGRAFICA.map((v) =>
@@ -198,6 +198,7 @@ async function naviga() {
   try {
     let vista;
     if (sezione === "magazzino") vista = id ? await conti.articolo(ctx, id, naviga) : await conti.magazzino(ctx);
+    else if (sezione === "demo") vista = await conti.magazzinoDemo(ctx, id === "b" ? "b" : "a");
     else if (sezione === "spesa") vista = await conti.spesa(ctx);
     else if (sezione === "costi") vista = await conti.costi(ctx);
     else if (sezione === "andamento") vista = await andamento.pagina(ctx);
