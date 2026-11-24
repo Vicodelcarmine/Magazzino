@@ -23,7 +23,7 @@ export async function elenco(ctx) {
   const adesso = Date.now();
   const riga = (o) => h("li", {}, h("a", { class: "riga" + (regole.inRitardo(o, adesso) ? " allarme" : "") + (o.stato === "aperto" ? "" : " spento"), href: "#/ordini/" + o.id },
     h("strong", {}, nomi.get(o.fornitore_id) || "Fornitore"), bollo(o, adesso),
-    h("span", { class: "nota" }, "ordinato " + giorno(o.inviato_il) + " · " + regole.righeDi(o).length + " articoli")));
+    h("span", { class: "nota" }, (regole.eDiPersona(o) ? "spesa di persona " : "ordinato ") + giorno(o.inviato_il) + " · " + regole.righeDi(o).length + " articoli")));
   const aperti = ordini.filter((o) => o.stato === "aperto").sort((a, b) => regole.inRitardo(b, adesso) - regole.inRitardo(a, adesso));
   const altri = ordini.filter((o) => o.stato !== "aperto");
   const ritardi = aperti.filter((o) => regole.inRitardo(o, adesso)).length;
@@ -146,7 +146,7 @@ export async function scheda(ctx, id, ridisegna) {
     }
   }
   return h("section", {},
-    h("div", { class: "testata" }, h("h2", {}, "Ordine a " + (fornitore ? fornitore.nome : "fornitore")), bollo(o, adesso)),
+    h("div", { class: "testata" }, h("h2", {}, (regole.eDiPersona(o) ? "Spesa fatta da " : "Ordine a ") + (fornitore ? fornitore.nome : "fornitore")), bollo(o, adesso)),
     h("ul", { class: "voci" },
       h("li", { class: "voce" }, h("span", {}, "Ordinato"), h("strong", {}, giorno(o.inviato_il))),
       h("li", { class: "voce" }, h("span", {}, "Fattura attesa entro"), h("strong", { class: ritardo ? "rosso" : "" }, o.attesa_entro ? giorno(o.attesa_entro + "T12:00:00") : "non la aspetto")),
@@ -154,9 +154,10 @@ export async function scheda(ctx, id, ridisegna) {
     ritardo ? h("p", { class: "errore" }, "La fattura di questo ordine non è arrivata nei tempi. Sollecita il fornitore, oppure carica la fattura da Fatture se ce l'hai già.") : null,
     h("h3", {}, "Cosa hai ordinato"),
     h("ul", { class: "lista" }, righe.map((r) => h("li", { class: "riga tipo-articolo" }, h("strong", {}, r.nome), h("span", { class: "numero" }, regole.quantoTesto(r))))),
-    o.nota ? h("p", { class: "nota" }, "Nota: " + o.nota) : null,
+    o.nota && !regole.eDiPersona(o) ? h("p", { class: "nota" }, "Nota: " + o.nota) : null,
     confronto,
-    o.stato === "aperto" ? h("div", {},
+    o.stato === "aperto" && regole.eDiPersona(o) ? h("p", { class: "nota" }, "Merce già ritirata di persona: non c'è niente da inviare. Quando arriva la fattura, caricala da Fatture: la confronto con questa lista.") : null,
+    o.stato === "aperto" && !regole.eDiPersona(o) ? h("div", {},
       h("h3", {}, "Invia l'ordine"),
       h("p", { class: "nota" }, "Si apre WhatsApp o la posta col messaggio già scritto: scegli il fornitore e premi invio."),
       h("div", { class: "azioni" },

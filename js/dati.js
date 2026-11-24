@@ -416,17 +416,19 @@ export function creaDati(archivioVero, ristoranteId, copia, spazio) {
       return (await tutta("ordini")).slice().sort((x, y) => String(y.inviato_il).localeCompare(String(x.inviato_il)));
     },
     // righe: [{ articolo_id, nome, udm, quantita, colli, qtaConfezione }]. Da qui il programma aspetta la fattura.
-    async creaOrdine(fornitore, righe, nota) {
+    // opz.diPersona: la merce è già stata ritirata; la fattura si aspetta comunque, almeno un giorno lavorativo.
+    async creaOrdine(fornitore, righe, nota, opz) {
       const buone = (righe || []).filter((r) => r.articolo_id && Number(r.quantita) > 0);
       if (!fornitore || !fornitore.id) throw new ErroreDato("Manca il fornitore dell'ordine.");
       if (!buone.length) throw new ErroreDato("Nell'ordine non c'è niente: scrivi almeno una quantità.");
       const adesso = new Date();
       const r = await archivio.inserisci("ordini", Object.assign({ id: nuovoId(), fornitore_id: fornitore.id, stato: "aperto",
-        inviato_il: adesso.toISOString(), attesa_entro: regoleOrdini.scadenza(adesso, regoleOrdini.giorniDi(fornitore)),
+        inviato_il: adesso.toISOString(),
+        attesa_entro: regoleOrdini.scadenza(adesso, opz && opz.diPersona ? Math.max(1, regoleOrdini.giorniDi(fornitore)) : regoleOrdini.giorniDi(fornitore)),
         righe: JSON.stringify(buone.map((x) => ({ articolo_id: x.articolo_id, nome: x.nome, udm: x.udm,
           quantita: Math.round(Number(x.quantita) * 1e4) / 1e4, colli: x.colli == null ? null : Number(x.colli),
           qtaConfezione: x.qtaConfezione ? Number(x.qtaConfezione) : null }))),
-        nota: String(nota || "").trim() }, qui));
+        nota: (opz && opz.diPersona ? regoleOrdini.DI_PERSONA + (String(nota || "").trim() ? ": " : "") : "") + String(nota || "").trim() }, qui));
       return r[0];
     },
     chiudiOrdine(ordine) { return modifica("ordini", ordine.id, { stato: "chiuso" }); },

@@ -116,3 +116,7 @@ export function aumenti(righeFattura, prezzi, fornitoreId, soglia, nomi) {
   });
   return out.sort((x, y) => y.delta - x.delta);
 }
+
+// Una spesa fatta di persona (lista unica) è un ordine già ritirato: non c'è niente da inviare, ma la fattura si aspetta lo stesso.
+export const DI_PERSONA = "Spesa fatta di persona";
+export const eDiPersona = (ordine) => String(ordine.nota || "").startsWith(DI_PERSONA);

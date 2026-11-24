@@ -199,6 +199,33 @@ export async function spesaUnica(ctx, ridisegna) {
     : qta(r.quantita) + " " + r.udm);
   const quantiPresi = h("strong", {}, String(presi.size));
   const contaReparto = (voci) => voci.filter((r) => presi.has(r.id)).length + " di " + voci.length + " presi";
+  // A spesa finita: ciò che è spuntato diventa «comprato da…», e da lì si aspetta la fattura per il confronto.
+  const fornitori = Array.from(c.fornitori.values()).filter((f) => f.attivo !== false).sort((x, y) => x.nome.localeCompare(y.nome, "it"));
+  const metro = fornitori.find((f) => f.nome.toLowerCase().startsWith("metro"));
+  const dove = scelta("dove", fornitori.map((f) => [f.id, f.nome]), metro ? metro.id : (fornitori[0] || {}).id);
+  const erroreFine = h("p", { class: "errore", role: "alert" });
+  const fine = h("div", { class: "scheda-confronto fine-spesa" });
+  function disegnaFine() {
+    const n = presi.size;
+    fine.hidden = !n || !ctx.titolare || !fornitori.length;
+    if (fine.hidden) return;
+    const tasto = h("button", { type: "button", class: "primario", onclick: async () => {
+      erroreFine.textContent = "";
+      tasto.disabled = true;
+      try {
+        const f = fornitori.find((x) => x.id === dove.value);
+        const comprate = sp.righe.filter((r) => presi.has(r.id)).map((r) => ({ articolo_id: r.id, nome: r.nome, udm: r.udm,
+          quantita: r.colli != null ? r.colli * r.qtaConfezione : r.quantita, colli: r.colli, qtaConfezione: r.colli != null ? r.qtaConfezione : null }));
+        const o = await ctx.dati.creaOrdine(f, comprate, "", { diPersona: true });
+        presi.clear(); ricorda();
+        location.hash = "#/ordini/" + o.id;
+      } catch (e) { erroreFine.textContent = e.message || "Non sono riuscito a registrare la spesa."; tasto.disabled = false; }
+    } }, "Spesa fatta: aspetto la fattura (" + n + (n === 1 ? " articolo)" : " articoli)"));
+    fine.replaceChildren(h("h3", {}, "Hai finito la spesa?"),
+      h("p", { class: "nota" }, "Dimmi dove l'hai fatta: aspetterò la fattura di quel fornitore e, quando la carichi, la confronto con quello che hai spuntato. La merce entra in magazzino con la fattura, non adesso."),
+      h("label", { class: "campo" }, h("span", { class: "etichetta" }, "Dove hai comprato"), dove),
+      erroreFine, h("div", { class: "azioni" }, tasto));
+  }
 
   const riga = (r) => {
     const spunta = h("input", { type: "checkbox", checked: presi.has(r.id), "aria-label": "Preso: " + r.nome });
@@ -210,6 +237,7 @@ export async function spesaUnica(ctx, ridisegna) {
       ricorda();
       li.firstChild.classList.toggle("presa", spunta.checked);
       quantiPresi.textContent = String(presi.size);
+      disegnaFine();
       // La riga presa scende in fondo al suo reparto; se la si rimette, torna su fra quelle da prendere.
       const elenco = li.parentNode;
       const primaPresa = Array.from(elenco.children).find((x) => x !== li && x.querySelector("input:checked"));
@@ -256,6 +284,7 @@ export async function spesaUnica(ctx, ridisegna) {
       ordinaGruppi: (x, y) => x.voci.every((r) => presi.has(r.id)) - y.voci.every((r) => presi.has(r.id)),
       cerca: "Cerca un articolo nella lista" })
       : vuoto("Niente da comprare: quello che c'è in magazzino copre i prossimi giorni."),
+    (disegnaFine(), fine),
     presi.size ? h("div", { class: "azioni" }, conConferma("Togli tutte le spunte", "Sì, ricomincia da capo", () => { presi.clear(); ricorda(); ridisegna(); })) : null);
 }
 
