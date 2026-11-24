@@ -66,10 +66,12 @@ export function daRegistrare(chiusura, voci, collegamenti, movimenti, extra) {
   const perCodice = new Map();
   (collegamenti || []).forEach((c) => { if (c.sistema === "cassa") perCodice.set(codiceCassa(c.chiave), c.piatto_id); });
   const fatti = new Set();
-  let interaGia = false; // le chiusure portate dal vecchio gestionale hanno come riferimento il solo nome del file
+  // Le chiusure portate dal vecchio gestionale hanno come riferimento il solo nome del file: di quelle si sa
+  // quali PIATTI erano già stati registrati. Una voce collegata dopo (il coperto, per esempio) si recupera anche lì.
+  const piattiGia = new Set();
   (movimenti || []).forEach((m) => {
     if (m.tipo !== "vendita") return;
-    if (m.riferimento === chiusura.nome_file) interaGia = true;
+    if (m.riferimento === chiusura.nome_file) piattiGia.add(m.piatto_id);
     else if (String(m.riferimento || "").startsWith(chiusura.nome_file + "#")) fatti.add(m.riferimento);
   });
   const esito = { vendite: [], senzaPiatto: [], gia: 0, quando: quando };
@@ -78,7 +80,7 @@ export function daRegistrare(chiusura, voci, collegamenti, movimenti, extra) {
     const piatto = perCodice.get(v.codice);
     if (!piatto) { esito.senzaPiatto.push(v); return; }
     const rif = riferimentoVendita(chiusura.nome_file, v.codice);
-    if (interaGia || fatti.has(rif)) { esito.gia += 1; return; }
+    if (piattiGia.has(piatto) || fatti.has(rif)) { esito.gia += 1; return; }
     esito.vendite.push(Object.assign({ tipo: "vendita", piatto_id: piatto, quantita: v.quantita,
       importo_unitario: v.importo > 0 ? Math.round(v.importo / v.quantita * 1e6) / 1e6 : null,
       avvenuto_il: quando, origine: "cassa", riferimento: rif }, extra || {}));

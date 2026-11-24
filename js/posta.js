@@ -85,7 +85,11 @@ function raccogliChiusure() {
     if (fatte.indexOf(id) >= 0) return;
     const f = fogli[id];
     try {
-      const valori = SpreadsheetApp.openById(id).getSheets()[0].getDataRange().getDisplayValues();
+      // Il foglio si legge esportandolo in sola lettura (aprirlo col suo programma chiederebbe il permesso di modificarlo).
+      const foglio = UrlFetchApp.fetch("https://docs.google.com/spreadsheets/d/" + id + "/export?format=csv",
+        { headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
+      if (foglio.getResponseCode() !== 200) throw new Error("non riesco a leggere il foglio (" + foglio.getResponseCode() + ")");
+      const valori = Utilities.parseCsv(foglio.getContentText("UTF-8"));
       const risposta = UrlFetchApp.fetch(ARCHIVIO_CASSA, {
         method: "post", contentType: "application/json", muteHttpExceptions: true,
         headers: { apikey: CHIAVE_PUBBLICA },
