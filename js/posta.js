@@ -6,13 +6,25 @@
 // aggiungere allegati alla cassetta di quel ristorante (vedi archivio/migrazioni/0011).
 
 // Il programma, con indirizzo e chiavi già scritti dentro: si copia e si incolla così com'è.
-export function programma(urlArchivio, chiavePubblica, chiaveRaccoglitore) {
+// Dalla riga dell'indirizzo di Drive («…/folders/1AbC…?usp=sharing») al solo codice della cartella.
+export function codiceCartella(testo) {
+  const t = String(testo || "").trim();
+  const m = /\/folders\/([A-Za-z0-9_-]{10,})/.exec(t) || /[?&]id=([A-Za-z0-9_-]{10,})/.exec(t);
+  if (m) return m[1];
+  return /^[A-Za-z0-9_-]{10,}$/.test(t) ? t : "";
+}
+
+export function programma(urlArchivio, chiavePubblica, chiaveRaccoglitore, cartellaChiusure) {
   return `// Raccoglitore delle fatture per il Magazzino.
 // Legge la posta in sola lettura e consegna al magazzino gli allegati PDF e XML. Non cancella, non sposta, non invia.
 // Legge anche, in sola lettura, i fogli «STAMPA ARTICOLI» che la cassa mette su Drive, e consegna le chiusure.
 
 const ARCHIVIO = ${JSON.stringify(String(urlArchivio).replace(/\/+$/, "") + "/rest/v1/rpc/consegna_posta")};
 const ARCHIVIO_CASSA = ${JSON.stringify(String(urlArchivio).replace(/\/+$/, "") + "/rest/v1/rpc/consegna_chiusura")};
+// La cartella di Drive dove la cassa salva i fogli (vuoto = si cerca solo per nome).
+const CARTELLA_CHIUSURE = ${JSON.stringify(codiceCartella(cartellaChiusure))};
+// Come si chiama, su Drive, la cartella dove stanno i fogli della cassa.
+const NOME_CARTELLA_CHIUSURE = "chiusure elaborate";
 const CHIAVE_PUBBLICA = ${JSON.stringify(chiavePubblica)};
 const CHIAVE = ${JSON.stringify(chiaveRaccoglitore)};
 // Le email degli ultimi 15 giorni con un allegato PDF o XML.
@@ -34,18 +46,46 @@ function tutto() {
 }
 
 // I fogli «STAMPA ARTICOLI» degli ultimi 20 giorni: di ognuno si consegna il contenuto così com'è.
+// Si cercano per nome in tutto ciò che questo account può vedere e, se è indicata, dentro la cartella delle chiusure
+// (serve quando la cassa salva nel Drive di un altro account, che ha condiviso la cartella con questo).
 function raccogliChiusure() {
   const memoria = PropertiesService.getScriptProperties();
   let fatte = JSON.parse(memoria.getProperty("chiusure") || "[]");
-  const da = new Date(Date.now() - 20 * 86400000).toISOString().slice(0, 10);
-  const fogli = DriveApp.searchFiles('title contains "STAMPA ARTICOLI" and mimeType = "application/vnd.google-apps.spreadsheet" and trashed = false and modifiedDate > "' + da + '"');
-  let nuove = 0, gia = 0, errori = 0, viste = 0;
-  while (fogli.hasNext()) {
-    const f = fogli.next();
-    viste += 1;
-    if (fatte.indexOf(f.getId()) >= 0) continue;
+  const limite = new Date(Date.now() - 20 * 86400000);
+  const fogli = {}, altri = {};
+  function guarda(f) {
+    if (f.getName().indexOf("STAMPA ARTICOLI") < 0 || f.getLastUpdated() < limite) return;
+    if (f.getMimeType() === MimeType.GOOGLE_SHEETS) fogli[f.getId()] = f;
+    else altri[f.getMimeType()] = (altri[f.getMimeType()] || 0) + 1;
+  }
+  try {
+    const trovati = DriveApp.searchFiles('title contains "STAMPA ARTICOLI" and trashed = false');
+    while (trovati.hasNext()) guarda(trovati.next());
+  } catch (e) { console.error("Ricerca su Drive non riuscita: " + e); }
+  // Le cartelle dove guardare: quella indicata col suo codice (se c'è) e quelle che si chiamano come la cartella delle chiusure.
+  const cartelle = [];
+  if (CARTELLA_CHIUSURE) {
+    try { cartelle.push(DriveApp.getFolderById(CARTELLA_CHIUSURE)); }
+    catch (e) { console.error("Non riesco ad aprire la cartella indicata: è condivisa con questo account? (" + e + ")"); }
+  }
+  try {
+    const perNome = DriveApp.searchFolders('title contains "' + NOME_CARTELLA_CHIUSURE + '" and trashed = false');
+    while (perNome.hasNext()) cartelle.push(perNome.next());
+  } catch (e) { console.error("Ricerca della cartella delle chiusure non riuscita: " + e); }
+  cartelle.forEach(function (c) {
     try {
-      const valori = SpreadsheetApp.openById(f.getId()).getSheets()[0].getDataRange().getDisplayValues();
+      const dentro = c.searchFiles('modifiedDate > "' + limite.toISOString().slice(0, 10) + '" and trashed = false');
+      while (dentro.hasNext()) guarda(dentro.next());
+    } catch (e) { console.error("Non riesco a leggere la cartella «" + c.getName() + "»: " + e); }
+  });
+  console.log("Cartelle guardate: " + (cartelle.map(function (c) { return c.getName(); }).join(", ") || "nessuna (solo ricerca per nome dei fogli)"));
+  let nuove = 0, gia = 0, errori = 0;
+  const ids = Object.keys(fogli);
+  ids.forEach(function (id) {
+    if (fatte.indexOf(id) >= 0) return;
+    const f = fogli[id];
+    try {
+      const valori = SpreadsheetApp.openById(id).getSheets()[0].getDataRange().getDisplayValues();
       const risposta = UrlFetchApp.fetch(ARCHIVIO_CASSA, {
         method: "post", contentType: "application/json", muteHttpExceptions: true,
         headers: { apikey: CHIAVE_PUBBLICA },
@@ -55,18 +95,22 @@ function raccogliChiusure() {
         errori += 1;
         console.error("Non consegnata " + f.getName() + ": " + risposta.getResponseCode() + " " + risposta.getContentText().slice(0, 200));
       } else {
-        fatte.push(f.getId());
+        fatte.push(id);
         if (risposta.getContentText().indexOf("nuova") >= 0) nuove += 1; else gia += 1;
       }
     } catch (e) {
       errori += 1;
       console.error("Errore su " + f.getName() + ": " + e);
     }
-  }
+  });
   memoria.setProperty("chiusure", JSON.stringify(fatte.slice(-200)));
-  console.log("Chiusure di cassa: " + viste + " fogli trovati, " + nuove + " consegnate, " + gia + " c'erano già, " + errori + " non riuscite.");
+  console.log("Chiusure di cassa: " + ids.length + " fogli trovati, " + nuove + " consegnate, " + gia + " c'erano già, " + errori + " non riuscite.");
+  Object.keys(altri).forEach(function (tipo) {
+    console.warn("Ci sono " + altri[tipo] + " file «STAMPA ARTICOLI» che non sono fogli Google (" + tipo + "): non li so leggere.");
+  });
 }
 
+// La posta: gli allegati PDF e XML delle email recenti.
 function raccogli() {
   const memoria = PropertiesService.getScriptProperties();
   let fatti = JSON.parse(memoria.getProperty("consegnati") || "[]");

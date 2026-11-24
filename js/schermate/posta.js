@@ -40,6 +40,9 @@ export async function pagina(ctx, nomeArchivio, ridisegna) {
         h("li", { class: "voce" }, h("span", {}, "Chiave creata"), h("strong", {}, quando(chiave.creato_il))))
     : h("p", { class: "nota avviso" }, "La posta non è collegata: le fatture le carichi a mano da Fatture.");
 
+  let cartella = "";
+  try { cartella = localStorage.getItem("erp.cartellaChiusure") || ""; } catch (e) { cartella = ""; }
+  const bloccoProgramma = h("div", {}, appenaCreata ? daCopiare("Programma (Codice.gs)", programma(url, archivio.chiave, appenaCreata, cartella)) : null);
   const istruzioni = appenaCreata ? h("div", { class: "scheda-confronto" },
     h("h3", {}, "Come collegare la posta (una volta sola)"),
     h("p", { class: "nota avviso" }, "Questa pagina mostra il programma con dentro la chiave: resta visibile solo finché non esci da qui. Se la perdi, crei una chiave nuova."),
@@ -50,7 +53,12 @@ export async function pagina(ctx, nomeArchivio, ridisegna) {
     daCopiare("Permessi (appsscript.json)", manifesto()),
     h("ol", { class: "passi", start: "4" },
       h("li", {}, "Apri il file ", h("strong", {}, "Codice.gs"), ", cancella tutto e incolla questo:")),
-    daCopiare("Programma (Codice.gs)", programma(url, archivio.chiave, appenaCreata)),
+    h("label", { class: "campo" }, h("span", { class: "etichetta" }, "Cartella di Drive con le chiusure della cassa (facoltativa)"),
+      h("input", { autocomplete: "off", value: cartella, placeholder: "Incolla qui l'indirizzo della cartella",
+        oninput: (ev) => { cartella = ev.target.value; try { localStorage.setItem("erp.cartellaChiusure", cartella); } catch (e) { /* vale finché resti qui */ }
+          bloccoProgramma.replaceChildren(daCopiare("Programma (Codice.gs)", programma(url, archivio.chiave, appenaCreata, cartella))); } }),
+      h("span", { class: "aiuto" }, "Serve solo se la cassa salva i fogli nel Drive di un altro account: condividi quella cartella con l'account della posta come Visualizzatore, aprila da questo account e incolla qui l'indirizzo che vedi in alto nel browser.")),
+    bloccoProgramma,
     h("ol", { class: "passi", start: "5" },
       h("li", {}, "Premi il dischetto per salvare. In alto, nel menu delle funzioni, scegli ", h("strong", {}, "installa"), " e premi ", h("strong", {}, "Esegui"), "."),
       h("li", {}, "Google chiede il permesso: scegli l'account, poi «Avanzate» → «Vai a … (non sicuro)» → «Consenti». L'avviso è normale per un programma fatto in casa. I permessi richiesti sono di sola lettura: posta, Drive e fogli."),
