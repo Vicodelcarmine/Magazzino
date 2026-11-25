@@ -75,13 +75,15 @@ export function righeControllate(p) {
 // I prezzi da scrivere quando il titolare preme «Carica».
 //  associa: { id della riga alternativa → id di un articolo di magazzino } (le non associate non entrano).
 //  articoli: gli articoli di magazzino, per controllare che l'articolo esista e l'unità sia la stessa.
-export function prezziDaCaricare(p, associa, articoli, oggi) {
+//  escluse: gli id delle righe che il titolare ha deciso di non caricare (un prezzo scritto male, per esempio).
+export function prezziDaCaricare(p, associa, articoli, oggi, escluse) {
   const perId = new Map((articoli || []).map((a) => [a.id, a]));
   // Il prezzo vale dal giorno in cui il fornitore l'ha mandato, non da quando lo si carica.
   const mandato = /^\d{4}-\d{2}-\d{2}/.test(String(p.inviato_il || "")) ? String(p.inviato_il).slice(0, 10) : "";
   const data = mandato || oggi || new Date().toISOString().slice(0, 10);
   const out = [], saltate = [];
   righeControllate(p).forEach((r) => {
+    if (escluse && escluse.has(r.id)) return;
     const articoloId = r.alternativo ? (associa || {})[r.id] : r.id;
     const a = articoloId ? perId.get(articoloId) : null;
     if (!a) { if (!r.alternativo) saltate.push(r.nome + ": l'articolo non c'è più in magazzino"); return; }

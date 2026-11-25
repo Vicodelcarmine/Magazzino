@@ -535,9 +535,9 @@ export function creaDati(archivioVero, ristoranteId, copia, spazio) {
     segnaPreventivo(id, stato) { return archivioVero.modifica("preventivi", { id: id, ristorante_id: ristoranteId }, { stato: stato }); },
     // «Carica»: i prezzi del preventivo entrano nel confronto prezzi (come preventivi, non come fatture) e,
     // dove il fornitore ha scritto il suo codice, lo si ricorda per riconoscere l'articolo quando arriverà la fattura.
-    async caricaPreventivo(p, associa) {
+    async caricaPreventivo(p, associa, escluse) {
       const [articoli, abbinamenti] = await Promise.all([api.articoli(), tutta("abbinamenti_fornitore")]);
-      const piano = preventivi.prezziDaCaricare(p, associa, articoli);
+      const piano = preventivi.prezziDaCaricare(p, associa, articoli, null, escluse);
       if (!piano.prezzi.length) throw new ErroreDato("In questo preventivo non c'è nessun prezzo che posso caricare." + (piano.saltate.length ? " " + piano.saltate.join("; ") + "." : ""));
       await archivio.inserisci("prezzi", piano.prezzi.map((x) => Object.assign({ id: nuovoId(), articolo_id: x.articolo_id, fornitore_id: x.fornitore_id,
         tipo: x.tipo, data: x.data, prezzo_udm: x.prezzo_udm, qta_confezione: x.qta_confezione, origine: x.origine }, qui)));

@@ -141,6 +141,7 @@ export async function elenco(ctx, nomeArchivio, ridisegna) {
 
 // ---------- un preventivo da controllare ----------
 const associazioni = new Map(); // id preventivo → { id riga alternativa → id articolo }
+const esclusioni = new Map();   // id preventivo → Set degli id delle righe da non caricare
 
 export async function scheda(ctx, id, ridisegna) {
   if (!ctx.titolare) return vuoto("Solo il titolare vede i preventivi.");
@@ -153,11 +154,13 @@ export async function scheda(ctx, id, ridisegna) {
   const perId = new Map(tutti.map((a) => [a.id, a]));
   if (!associazioni.has(id)) associazioni.set(id, {});
   const associa = associazioni.get(id);
+  if (!esclusioni.has(id)) esclusioni.set(id, new Set());
+  const escluse = esclusioni.get(id);
   const righe = regole.righeControllate(p);
   const errore = h("p", { class: "errore", role: "alert" });
   const conto = h("p", { class: "nota", role: "status" });
   const aggiornaConto = () => {
-    const piano = regole.prezziDaCaricare(p, associa, tutti);
+    const piano = regole.prezziDaCaricare(p, associa, tutti, null, escluse);
     conto.textContent = piano.prezzi.length + (piano.prezzi.length === 1 ? " prezzo entra" : " prezzi entrano") + " nel confronto"
       + (piano.saltate.length ? " · non entrano: " + piano.saltate.join("; ") : "");
   };
@@ -175,6 +178,17 @@ export async function scheda(ctx, id, ridisegna) {
           if (cerca) cerca.focus();
         } }, "Associa a un articolo già in magazzino"));
       }
+      const fuori = escluse.has(r.id);
+      li.classList.toggle("spento", fuori);
+      const tastoFuori = h("button", { type: "button", class: "leggero", onclick: () => {
+        if (fuori) escluse.delete(r.id); else escluse.add(r.id);
+        disegna(); aggiornaConto();
+      } }, fuori ? "Caricala invece" : "Non caricare questa riga");
+      if (fuori) {
+        li.replaceChildren(h("strong", {}, r.nome), h("span", { class: "numero" }, euro(r.prezzo) + "/" + r.udm),
+          h("span", { class: "nota" }, "Non viene caricata."), tastoFuori);
+        return;
+      }
       li.replaceChildren(...[
         h("strong", {}, r.nome), h("span", { class: "numero" }, euro(r.prezzo) + "/" + r.udm),
         r.alternativo ? h("span", { class: "nota avviso" }, "Articolo alternativo, scritto dal fornitore.") : null,
@@ -182,7 +196,8 @@ export async function scheda(ctx, id, ridisegna) {
         scelto ? h("span", { class: "scelto" }, h("span", { class: "nota" }, "→ entra come prezzo di «" + scelto.nome + "»"),
           h("button", { type: "button", class: "leggero", onclick: () => { delete associa[r.id]; disegna(); aggiornaConto(); } }, "Cambia")) : null,
         r.alternativo && !scelto ? guscio : null,
-        r.alternativo && !scelto ? h("span", { class: "nota" }, "Non crea un articolo nuovo. Entra nei prezzi solo se lo associ e premi Carica.") : null].filter(Boolean));
+        r.alternativo && !scelto ? h("span", { class: "nota" }, "Non crea un articolo nuovo. Entra nei prezzi solo se lo associ e premi Carica.") : null,
+        r.alternativo && !scelto ? null : tastoFuori].filter(Boolean));
     }
     disegna();
     return li;
@@ -191,7 +206,7 @@ export async function scheda(ctx, id, ridisegna) {
   const carica = h("button", { type: "button", class: "primario", onclick: async () => {
     errore.textContent = "";
     carica.disabled = true;
-    try { await ctx.dati.caricaPreventivo(p, associa); associazioni.delete(id); location.hash = "#/preventivi"; }
+    try { await ctx.dati.caricaPreventivo(p, associa, escluse); associazioni.delete(id); esclusioni.delete(id); location.hash = "#/preventivi"; }
     catch (e) { errore.textContent = e.message || "Non riuscito."; carica.disabled = false; }
   } }, "Carica");
   return h("section", {},
