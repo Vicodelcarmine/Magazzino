@@ -327,6 +327,33 @@ export function creaDati(archivioVero, ristoranteId, copia, spazio) {
       return mov;
     },
 
+    // L'inventario completo: tanti conteggi insieme, tutti con la stessa ora (quella in cui lo si conferma).
+    // conteggi: [{ articolo_id, quantita }]. Un articolo due volte è un errore di chi chiama: vale l'ultimo.
+    async registraInventario(conteggi) {
+      const ultimi = new Map();
+      (conteggi || []).forEach((c) => {
+        const n = Number(c.quantita);
+        if (c.articolo_id && Number.isFinite(n) && n >= 0) ultimi.set(c.articolo_id, Math.round(n * 1e4) / 1e4);
+      });
+      if (!ultimi.size) throw new ErroreDato("Nell'inventario non c'è nessun numero.");
+      const adesso = new Date().toISOString();
+      const io = archivio.utente().id;
+      const righe = Array.from(ultimi.entries()).map(([articoloId, q]) => Object.assign({ id: nuovoId(), tipo: "conteggio",
+        articolo_id: articoloId, quantita: q, avvenuto_il: adesso, origine: "manuale", autore_id: io, nota: "inventario" }, qui));
+      for (let i = 0; i < righe.length; i += 300) await archivio.inserisci("movimenti", righe.slice(i, i + 300));
+      return righe.length;
+    },
+    // Quando è stata fatta l'ultima chiusura di cassa che è già nel registro (millisecondi), o null.
+    async ultimaChiusuraCassa() {
+      let ultimo = null;
+      (await tutta("movimenti")).forEach((m) => {
+        if (m.tipo !== "vendita" || m.origine !== "cassa") return;
+        const t = Date.parse(m.avvenuto_il);
+        if (Number.isFinite(t) && (ultimo == null || t > ultimo)) ultimo = t;
+      });
+      return ultimo;
+    },
+
     // Merce buttata o rotta: una correzione in meno, col motivo. Entra negli sprechi.
     async registraSpreco(articoloId, quantita, motivo) {
       const n = parseNumero(quantita);

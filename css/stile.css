@@ -341,3 +341,9 @@ a.reparto-icona .contatore { margin-left: 0; }
 .link-preventivo { font: .8rem ui-monospace, Menlo, monospace; color: var(--tenue); overflow-wrap: anywhere; margin: .3rem 0; user-select: all; }
 .tipo-articolo-testo { color: var(--c-articolo); font-weight: 600; }
 ul.prezzi-preventivo { flex-basis: 100%; margin: .4rem 0; background: transparent; }
+
+/* ---------- Inventario ---------- */
+.riga-inventario { align-items: center; }
+.riga-inventario.presa { border-left-color: var(--accento); }
+.riga-inventario.presa .nota { color: var(--accento); }
+.riga-inventario input.stretto { font-size: 1.15rem; font-weight: 700; }

@@ -6,6 +6,7 @@ import { inRitardo } from "../ordini.js";
 
 const LAVORO = [
   ["magazzino", "📦", "Magazzino", "quanta merce c'è"],
+  ["inventario", "📋", "Inventario", "conta tutto il magazzino"],
   ["fatture", "🧾", "Fatture", "la merce che arriva"],
   ["spesa", "🛒", "Spesa", "cosa ordinare"],
   ["ordini", "📝", "Ordini", "inviati, in attesa di fattura"],
@@ -38,6 +39,8 @@ export async function pagina(ctx) {
     else if (ordini.length) segni.ordini = ["da_completare", ordini.length + " in attesa"];
     const arrivati = (await ctx.dati.preventivi()).filter((p) => p.stato === "inviato").length;
     if (arrivati) segni.preventivi = ["da_completare", arrivati + " da controllare"];
+    try { const b = JSON.parse(localStorage.getItem("erp.inventario." + ctx.ristorante.id) || "null");
+      if (b && b.conteggi && Object.keys(b.conteggi).length) segni.inventario = ["da_completare", "in corso: " + Object.keys(b.conteggi).length + " contati"]; } catch (e) { /* niente segno */ }
     const senzaDistinta = Array.from(c.piatti.values()).filter((p) => p.stato === "da_completare" && !p.senza_merce).length;
     if (senzaDistinta) segni.piatti = ["da_completare", senzaDistinta + " senza distinta"];
   } catch (e) { /* i riquadri restano senza numeri */ }

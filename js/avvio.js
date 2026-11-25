@@ -21,6 +21,7 @@ import * as casa from "./schermate/casa.js";
 import * as ordini from "./schermate/ordini.js";
 import * as posta from "./schermate/posta.js";
 import * as preventiviPagina from "./schermate/preventivi.js";
+import * as inventario from "./schermate/inventario.js";
 import * as cassaPagina from "./schermate/cassa.js";
 import { vociDaSistemare } from "./cassa.js";
 import { leggiXls } from "./xls.js";
@@ -170,7 +171,7 @@ function cornice(sezione, contenuto) {
         tastoEsci())),
     // Nella Home il menu in basso non serve (i riquadri portano già ovunque); nelle altre pagine resta, per muoversi senza tornare alla Home.
     sezione === "casa" ? null : h("nav", { class: "principale" }, VOCI.map((v) => {
-      const qui = v[0] === sezione || (v[0] === "piatti" && inAnagrafica(sezione)) || (v[0] === "spesa" && (sezione === "ordini" || sezione === "ordine-nuovo" || sezione === "preventivi")) || (v[0] === "fatture" && sezione === "posta");
+      const qui = v[0] === sezione || (v[0] === "magazzino" && sezione === "inventario") || (v[0] === "piatti" && inAnagrafica(sezione)) || (v[0] === "spesa" && (sezione === "ordini" || sezione === "ordine-nuovo" || sezione === "preventivi")) || (v[0] === "fatture" && sezione === "posta");
       return h("a", { href: "#/" + v[0], class: "voce-menu" + (qui ? " qui" : "") }, v[1]);
     })),
     inAnagrafica(sezione) ? h("nav", { class: "secondario" }, ANAGRAFICA.map((v) =>
@@ -220,6 +221,7 @@ async function naviga() {
     else if (sezione === "ordini") vista = id ? await ordini.scheda(ctx, id, naviga) : await ordini.elenco(ctx);
     else if (sezione === "cassa") vista = await cassaPagina.pagina(ctx, naviga);
     else if (sezione === "preventivi") vista = id ? await preventiviPagina.scheda(ctx, id, naviga) : await preventiviPagina.elenco(ctx, nomeArchivio, naviga);
+    else if (sezione === "inventario") vista = await inventario.pagina(ctx, naviga);
     else if (sezione === "posta") vista = await posta.pagina(ctx, nomeArchivio, naviga);
     else if (sezione === "attesa") vista = await attesa.pagina(ctx, naviga);
     else if (sezione === "trasloco") vista = await trasloco.pagina(ctx, archivio, nomeArchivio);

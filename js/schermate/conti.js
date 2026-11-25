@@ -44,7 +44,7 @@ export async function magazzino(ctx) {
       sfridoTesto(p),
     ].filter(Boolean).join(" · "))));
   return h("section", { class: "tipo-articolo" },
-    h("div", { class: "testata" }, h("h2", {}, "Magazzino")),
+    h("div", { class: "testata" }, h("h2", {}, "Magazzino"), h("a", { class: "pulsante", href: "#/inventario" }, "Inventario completo")),
     aggiornamento(c),
     h("div", { class: "riquadri" },
       riquadro(String(tutti.length), "articoli attivi"),
