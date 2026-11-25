@@ -20,6 +20,27 @@
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 
+/* Gli sfondi fra cui scegliere (dalla Home). Cambiano il fondo e, di conseguenza, schede, campi e contorni,
+   perché restino leggibili sopra quel fondo. Testo, verde dei tasti, rosso e giallo degli avvisi non cambiano. */
+html[data-sfondo="notte"] {
+  --sfondo: #0a1628; --fondale: radial-gradient(ellipse at 50% -10%, #1f4570 0%, #0f2440 38%, #0a1628 70%);
+  --carta: #132a47; --campo: #0c1d33; --bordo: #2a4a6e; --bordo-tasto: #8fb0d6; --tenue: #a9bdd6; --sopra-pieno: #071221;
+}
+html[data-sfondo="oceano"] {
+  --sfondo: #071a2e; --fondale: linear-gradient(180deg, #17558f 0%, #0d305a 40%, #071a2e 100%);
+  --carta: #12305a; --campo: #0a1e38; --bordo: #32598a; --bordo-tasto: #8fb3dc; --tenue: #a8bfd9; --sopra-pieno: #06111f;
+}
+html[data-sfondo="indaco"] {
+  --sfondo: #0d1030; --fondale: linear-gradient(160deg, #1c2466 0%, #101642 45%, #090b22 100%);
+  --carta: #171d4d; --campo: #0e1238; --bordo: #343c80; --bordo-tasto: #a0a8e6; --tenue: #b3b9e0; --sopra-pieno: #080a20;
+}
+html[data-sfondo="petrolio"] {
+  --sfondo: #071a1e; --fondale: linear-gradient(180deg, #0f3b44 0%, #0a252b 45%, #061417 100%);
+  --carta: #0f2b31; --campo: #091e23; --bordo: #2a5560; --bordo-tasto: #8fbac3; --tenue: #a6c2c7; --sopra-pieno: #051215;
+}
+/* Il fondo sfumato sta fermo dietro la pagina mentre si scorre. */
+body::before { content: ""; position: fixed; inset: 0; z-index: -1; background: var(--fondale, var(--sfondo)); }
+
 body {
   margin: 0;
   background: var(--sfondo);
@@ -347,3 +368,9 @@ ul.prezzi-preventivo { flex-basis: 100%; margin: .4rem 0; background: transparen
 .riga-inventario.presa { border-left-color: var(--accento); }
 .riga-inventario.presa .nota { color: var(--accento); }
 .riga-inventario input.stretto { font-size: 1.15rem; font-weight: 700; }
+
+/* ---------- Scelta dello sfondo ---------- */
+.sfondi { display: grid; grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr)); gap: .6rem; }
+button.sfondo-prova { display: grid; gap: .4rem; justify-items: center; padding: .6rem; border-width: 2px; background: transparent; }
+button.sfondo-prova .campione { display: block; width: 100%; height: 3.2rem; border-radius: 8px; border: 1px solid rgba(255, 255, 255, .25); }
+button.sfondo-prova[aria-pressed="true"] { border-color: var(--accento); box-shadow: 0 0 0 2px var(--accento) inset; }

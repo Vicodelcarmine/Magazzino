@@ -71,6 +71,8 @@ export async function elenco(ctx, nomeArchivio, ridisegna) {
   const scelti = () => articoli.filter((a) => categorieScelte[String(a.categoria || "").trim() || "Senza categoria"]);
   const nelLink = h("p", { class: "nota" });
   const fornitore = h("input", { name: "fornitore", autocomplete: "off", placeholder: "Rossi", list: "fornitori-noti", "aria-label": "Fornitore" });
+  // Arrivando dalla scheda di un fornitore, il suo nome è già scritto.
+  try { const per = sessionStorage.getItem("erp.preventivo.per"); if (per) { fornitore.value = per; sessionStorage.removeItem("erp.preventivo.per"); } } catch (e) { /* niente */ }
   const giorni = h("input", { name: "giorni", inputmode: "numeric", autocomplete: "off", placeholder: "7", "aria-label": "Quanti giorni resta valido" });
   const tastiCategorie = h("div", { class: "filtri tipo-articolo", role: "group", "aria-label": "Categorie" });
   function disegnaCategorie() {
@@ -111,7 +113,7 @@ export async function elenco(ctx, nomeArchivio, ridisegna) {
   const arrivati = Array.from(gruppi.entries()).sort((a, b) => String(b[1][0].data).localeCompare(String(a[1][0].data)));
 
   return h("section", {},
-    h("div", { class: "testata" }, h("h2", {}, "Preventivi")),
+    h("div", { class: "testata" }, h("h2", {}, "Preventivi"), h("a", { class: "pulsante", href: "#/fornitori" }, "‹ Fornitori")),
     bloccoControllo,
     h("p", { class: "nota" }, "Crei un link e lo mandi al fornitore. Lui scrive i prezzi degli articoli che usi. Il preventivo non entra nei prezzi finché non lo carichi."),
     h("div", { class: "scheda" },

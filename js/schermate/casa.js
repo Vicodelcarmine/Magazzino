@@ -3,6 +3,7 @@
 import { h } from "../dom.js";
 import * as motore from "../motore.js";
 import { inRitardo } from "../ordini.js";
+import { SFONDI, sfondoScelto, scegliSfondo } from "../sfondo.js";
 
 const LAVORO = [
   ["magazzino", "📦", "Magazzino", "quanta merce c'è"],
@@ -10,7 +11,6 @@ const LAVORO = [
   ["fatture", "🧾", "Fatture", "la merce che arriva"],
   ["spesa", "🛒", "Spesa", "cosa ordinare"],
   ["ordini", "📝", "Ordini", "inviati, in attesa di fattura"],
-  ["preventivi", "🤝", "Preventivi", "chiedi i prezzi ai fornitori"],
   ["cassa", "🧮", "Cassa", "le vendite di ogni sera"],
   ["costi", "💶", "Costi", "food cost e margini"],
   ["andamento", "📈", "Andamento", "grafici e sprechi"],
@@ -19,8 +19,20 @@ const ANAGRAFICA = [
   ["piatti", "🍽️", "Menu", "i piatti che vendi"],
   ["preparazioni", "🍲", "Preparazioni", "impasti, sughi, salse"],
   ["articoli", "🏷️", "Articoli", "ciò che compri"],
-  ["fornitori", "🚚", "Fornitori", "da chi compri"],
+  ["fornitori", "🚚", "Fornitori", "da chi compri, e i preventivi"],
 ];
+
+// In fondo alla Home: gli sfondi fra cui scegliere. Si prova con un tocco, la scelta resta su questo dispositivo.
+function sceltaSfondo() {
+  const tasti = SFONDI.map((s) => h("button", { type: "button", class: "sfondo-prova", "aria-pressed": sfondoScelto() === s[0] ? "true" : "false",
+    onclick: (ev) => {
+      scegliSfondo(s[0]);
+      ev.currentTarget.parentNode.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", b === ev.currentTarget ? "true" : "false"));
+    } },
+    h("span", { class: "campione", style: "background: linear-gradient(180deg, " + s[2] + ", " + s[3] + ")" }), h("span", {}, s[1])));
+  return h("details", { class: "tendina" }, h("summary", {}, h("strong", {}, "Sfondo del programma"), h("span", { class: "nota" }, "tocca per provarli")),
+    h("div", { class: "sfondi", style: "padding: 0 .8rem .8rem" }, tasti));
+}
 
 export async function pagina(ctx) {
   // Qualche numero sui riquadri, per sapere dove guardare prima. Se i conti non riescono, la Home si apre lo stesso.
@@ -38,7 +50,7 @@ export async function pagina(ctx) {
     if (ritardi) segni.ordini = ["rifiutato", ritardi === 1 ? "1 fattura in ritardo" : ritardi + " fatture in ritardo"];
     else if (ordini.length) segni.ordini = ["da_completare", ordini.length + " in attesa"];
     const arrivati = (await ctx.dati.preventivi()).filter((p) => p.stato === "inviato").length;
-    if (arrivati) segni.preventivi = ["da_completare", arrivati + " da controllare"];
+    if (arrivati) segni.fornitori = ["da_completare", arrivati === 1 ? "1 preventivo da controllare" : arrivati + " preventivi da controllare"];
     try { const b = JSON.parse(localStorage.getItem("erp.inventario." + ctx.ristorante.id) || "null");
       if (b && b.conteggi && Object.keys(b.conteggi).length) segni.inventario = ["da_completare", "in corso: " + Object.keys(b.conteggi).length + " contati"]; } catch (e) { /* niente segno */ }
     const senzaDistinta = Array.from(c.piatti.values()).filter((p) => p.stato === "da_completare" && !p.senza_merce).length;
@@ -51,5 +63,6 @@ export async function pagina(ctx) {
   return h("section", { class: "casa" },
     h("div", { class: "griglia-reparti" }, LAVORO.map(riquadro)),
     h("h3", {}, "Anagrafica"),
-    h("div", { class: "griglia-reparti" }, ANAGRAFICA.map(riquadro)));
+    h("div", { class: "griglia-reparti" }, ANAGRAFICA.map(riquadro)),
+    sceltaSfondo());
 }

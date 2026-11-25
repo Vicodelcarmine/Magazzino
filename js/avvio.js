@@ -22,6 +22,9 @@ import * as ordini from "./schermate/ordini.js";
 import * as posta from "./schermate/posta.js";
 import * as preventiviPagina from "./schermate/preventivi.js";
 import * as inventario from "./schermate/inventario.js";
+import { applicaSfondo, sfondoScelto } from "./sfondo.js";
+
+applicaSfondo(sfondoScelto()); // subito, prima di disegnare qualunque cosa
 import * as cassaPagina from "./schermate/cassa.js";
 import { vociDaSistemare } from "./cassa.js";
 import { leggiXls } from "./xls.js";
@@ -138,7 +141,7 @@ async function parti() {
 const CASA = "#/casa";
 const VOCI = [["magazzino", "Magazzino"], ["fatture", "Fatture"], ["spesa", "Spesa"], ["costi", "Costi"], ["andamento", "Andamento"], ["piatti", "Anagrafica"]];
 const ANAGRAFICA = [["piatti", "Piatti"], ["preparazioni", "Preparazioni"], ["articoli", "Articoli"], ["fornitori", "Fornitori"]];
-const inAnagrafica = (sezione) => ANAGRAFICA.some((v) => v[0] === sezione);
+const inAnagrafica = (sezione) => sezione === "preventivi" || ANAGRAFICA.some((v) => v[0] === sezione);
 
 function cornice(sezione, contenuto) {
   const qui = location.hash || CASA;
@@ -171,11 +174,11 @@ function cornice(sezione, contenuto) {
         tastoEsci())),
     // Nella Home il menu in basso non serve (i riquadri portano già ovunque); nelle altre pagine resta, per muoversi senza tornare alla Home.
     sezione === "casa" ? null : h("nav", { class: "principale" }, VOCI.map((v) => {
-      const qui = v[0] === sezione || (v[0] === "magazzino" && sezione === "inventario") || (v[0] === "piatti" && inAnagrafica(sezione)) || (v[0] === "spesa" && (sezione === "ordini" || sezione === "ordine-nuovo" || sezione === "preventivi")) || (v[0] === "fatture" && sezione === "posta");
+      const qui = v[0] === sezione || (v[0] === "magazzino" && sezione === "inventario") || (v[0] === "piatti" && inAnagrafica(sezione)) || (v[0] === "spesa" && (sezione === "ordini" || sezione === "ordine-nuovo")) || (v[0] === "fatture" && sezione === "posta");
       return h("a", { href: "#/" + v[0], class: "voce-menu" + (qui ? " qui" : "") }, v[1]);
     })),
     inAnagrafica(sezione) ? h("nav", { class: "secondario" }, ANAGRAFICA.map((v) =>
-      h("a", { href: "#/" + v[0], class: "voce-" + v[0] + (v[0] === sezione ? " qui" : "") }, v[1]))) : null,
+      h("a", { href: "#/" + v[0], class: "voce-" + v[0] + (v[0] === sezione || (v[0] === "fornitori" && sezione === "preventivi") ? " qui" : "") }, v[1]))) : null,
     h("main", {}, contenuto),
     h("footer", {}, "Versione " + VERSIONE));
 }
