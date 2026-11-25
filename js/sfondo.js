@@ -7,7 +7,7 @@ export const SFONDI = [
   ["petrolio", "Blu petrolio", "#0f3b44", "#061417"],
   ["nero", "Nero (com'era)", "#181d22", "#0e1114"],
 ];
-const PREDEFINITO = "nero";
+const PREDEFINITO = "notte"; // scelto dal titolare il 25/11
 const CHIAVE = "erp.sfondo";
 
 export function sfondoScelto() {
