@@ -23,8 +23,8 @@ const ARCHIVIO = ${JSON.stringify(String(urlArchivio).replace(/\/+$/, "") + "/re
 const ARCHIVIO_CASSA = ${JSON.stringify(String(urlArchivio).replace(/\/+$/, "") + "/rest/v1/rpc/consegna_chiusura")};
 // La cartella di Drive dove la cassa salva i fogli (vuoto = si cerca solo per nome).
 const CARTELLA_CHIUSURE = ${JSON.stringify(codiceCartella(cartellaChiusure))};
-// Come si chiama, su Drive, la cartella dove stanno i fogli della cassa.
-const NOME_CARTELLA_CHIUSURE = "chiusure elaborate";
+// Le cartelle di Drive della cassa: tutte quelle il cui nome comincia così («Chiusure», «Chiusure Elaborate»).
+const NOME_CARTELLA_CHIUSURE = "chiusure";
 const CHIAVE_PUBBLICA = ${JSON.stringify(chiavePubblica)};
 const CHIAVE = ${JSON.stringify(chiaveRaccoglitore)};
 // Le email degli ultimi 15 giorni con un allegato PDF o XML.
@@ -45,24 +45,29 @@ function tutto() {
   try { raccogliChiusure(); } catch (e) { console.error("Chiusure di cassa: " + e); }
 }
 
-// I fogli «STAMPA ARTICOLI» degli ultimi 20 giorni: di ognuno si consegna il contenuto così com'è.
-// Si cercano per nome in tutto ciò che questo account può vedere e, se è indicata, dentro la cartella delle chiusure
-// (serve quando la cassa salva nel Drive di un altro account, che ha condiviso la cartella con questo).
+// Le chiusure della cassa degli ultimi 20 giorni: i file «STAMPA ARTICOLI» nelle cartelle delle chiusure.
+// Di ogni chiusura si consegna il foglio Google, se c'è; altrimenti il file .xls della cassa così com'è
+// (lo legge il magazzino). Così le chiusure arrivano anche se nessuno trasforma più i file.
+// Le cartelle si cercano per nome fra quelle che questo account può vedere: se la cassa salva nel Drive di un
+// altro account, quelle cartelle vanno condivise con questo, come Visualizzatore.
 function raccogliChiusure() {
   const memoria = PropertiesService.getScriptProperties();
   let fatte = JSON.parse(memoria.getProperty("chiusure") || "[]");
   const limite = new Date(Date.now() - 20 * 86400000);
-  const fogli = {}, altri = {};
+  const fogli = {}, xls = {}, altri = {};
   function guarda(f) {
-    if (f.getName().indexOf("STAMPA ARTICOLI") < 0 || f.getLastUpdated() < limite) return;
-    if (f.getMimeType() === MimeType.GOOGLE_SHEETS) fogli[f.getId()] = f;
-    else altri[f.getMimeType()] = (altri[f.getMimeType()] || 0) + 1;
+    const nome = f.getName();
+    if (nome.indexOf("STAMPA ARTICOLI") < 0 || f.getLastUpdated() < limite) return;
+    const base = nome.replace(/\\.xlsx?$/i, "").trim();
+    const tipo = f.getMimeType();
+    if (tipo === MimeType.GOOGLE_SHEETS) fogli[base] = f;
+    else if (tipo === "application/vnd.ms-excel" || /\\.xls$/i.test(nome)) xls[base] = f;
+    else if (tipo !== "application/pdf") altri[tipo] = (altri[tipo] || 0) + 1;
   }
   try {
     const trovati = DriveApp.searchFiles('title contains "STAMPA ARTICOLI" and trashed = false');
     while (trovati.hasNext()) guarda(trovati.next());
   } catch (e) { console.error("Ricerca su Drive non riuscita: " + e); }
-  // Le cartelle dove guardare: quella indicata col suo codice (se c'è) e quelle che si chiamano come la cartella delle chiusure.
   const cartelle = [];
   if (CARTELLA_CHIUSURE) {
     try { cartelle.push(DriveApp.getFolderById(CARTELLA_CHIUSURE)); }
@@ -71,46 +76,54 @@ function raccogliChiusure() {
   try {
     const perNome = DriveApp.searchFolders('title contains "' + NOME_CARTELLA_CHIUSURE + '" and trashed = false');
     while (perNome.hasNext()) cartelle.push(perNome.next());
-  } catch (e) { console.error("Ricerca della cartella delle chiusure non riuscita: " + e); }
+  } catch (e) { console.error("Ricerca delle cartelle delle chiusure non riuscita: " + e); }
   cartelle.forEach(function (c) {
     try {
       const dentro = c.searchFiles('modifiedDate > "' + limite.toISOString().slice(0, 10) + '" and trashed = false');
       while (dentro.hasNext()) guarda(dentro.next());
     } catch (e) { console.error("Non riesco a leggere la cartella «" + c.getName() + "»: " + e); }
   });
-  console.log("Cartelle guardate: " + (cartelle.map(function (c) { return c.getName(); }).join(", ") || "nessuna (solo ricerca per nome dei fogli)"));
-  let nuove = 0, gia = 0, errori = 0;
-  const ids = Object.keys(fogli);
-  ids.forEach(function (id) {
-    if (fatte.indexOf(id) >= 0) return;
-    const f = fogli[id];
+  console.log("Cartelle guardate: " + (cartelle.map(function (c) { return c.getName(); }).join(", ") || "nessuna (solo ricerca per nome dei file)"));
+  const nomi = {};
+  Object.keys(fogli).forEach(function (n) { nomi[n] = true; });
+  Object.keys(xls).forEach(function (n) { nomi[n] = true; });
+  let nuove = 0, gia = 0, errori = 0, daFile = 0;
+  Object.keys(nomi).sort().forEach(function (base) {
+    if (fatte.indexOf(base) >= 0) return;
     try {
-      // Il foglio si legge esportandolo in sola lettura (aprirlo col suo programma chiederebbe il permesso di modificarlo).
-      const foglio = UrlFetchApp.fetch("https://docs.google.com/spreadsheets/d/" + id + "/export?format=csv",
-        { headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
-      if (foglio.getResponseCode() !== 200) throw new Error("non riesco a leggere il foglio (" + foglio.getResponseCode() + ")");
-      const valori = Utilities.parseCsv(foglio.getContentText("UTF-8"));
+      let valori;
+      if (fogli[base]) {
+        // Il foglio si legge esportandolo in sola lettura (aprirlo col suo programma chiederebbe il permesso di modificarlo).
+        const foglio = UrlFetchApp.fetch("https://docs.google.com/spreadsheets/d/" + fogli[base].getId() + "/export?format=csv",
+          { headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
+        if (foglio.getResponseCode() !== 200) throw new Error("non riesco a leggere il foglio (" + foglio.getResponseCode() + ")");
+        valori = JSON.stringify(Utilities.parseCsv(foglio.getContentText("UTF-8")));
+      } else {
+        valori = JSON.stringify({ xls: Utilities.base64Encode(xls[base].getBlob().getBytes()) });
+        daFile += 1;
+      }
       const risposta = UrlFetchApp.fetch(ARCHIVIO_CASSA, {
         method: "post", contentType: "application/json", muteHttpExceptions: true,
         headers: { apikey: CHIAVE_PUBBLICA },
-        payload: JSON.stringify({ chiave: CHIAVE, nome_file: f.getName(), valori: JSON.stringify(valori) }),
+        payload: JSON.stringify({ chiave: CHIAVE, nome_file: base, valori: valori }),
       });
       if (risposta.getResponseCode() !== 200) {
         errori += 1;
-        console.error("Non consegnata " + f.getName() + ": " + risposta.getResponseCode() + " " + risposta.getContentText().slice(0, 200));
+        console.error("Non consegnata " + base + ": " + risposta.getResponseCode() + " " + risposta.getContentText().slice(0, 200));
       } else {
-        fatte.push(id);
+        fatte.push(base);
         if (risposta.getContentText().indexOf("nuova") >= 0) nuove += 1; else gia += 1;
       }
     } catch (e) {
       errori += 1;
-      console.error("Errore su " + f.getName() + ": " + e);
+      console.error("Errore su " + base + ": " + e);
     }
   });
   memoria.setProperty("chiusure", JSON.stringify(fatte.slice(-200)));
-  console.log("Chiusure di cassa: " + ids.length + " fogli trovati, " + nuove + " consegnate, " + gia + " c'erano già, " + errori + " non riuscite.");
+  console.log("Chiusure di cassa: " + Object.keys(nomi).length + " trovate (" + Object.keys(fogli).length + " come foglio, "
+    + Object.keys(xls).length + " come file .xls), " + nuove + " consegnate, " + gia + " c'erano già, " + errori + " non riuscite.");
   Object.keys(altri).forEach(function (tipo) {
-    console.warn("Ci sono " + altri[tipo] + " file «STAMPA ARTICOLI» che non sono fogli Google (" + tipo + "): non li so leggere.");
+    console.warn("Ci sono " + altri[tipo] + " file «STAMPA ARTICOLI» di un tipo che non so leggere (" + tipo + ").");
   });
 }
 

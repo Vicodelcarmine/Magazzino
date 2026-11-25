@@ -9,6 +9,7 @@ import { accoda, applica, inCoda, riapplica, spedisci } from "./coda.js";
 import * as carico from "./fatture/carico.js";
 import * as regoleOrdini from "./ordini.js";
 import * as cassa from "./cassa.js";
+import { leggiXls } from "./xls.js";
 import * as preventivi from "./preventivi.js";
 
 export class ErroreDato extends Error {}
@@ -464,8 +465,7 @@ export function creaDati(archivioVero, ristoranteId, copia, spazio) {
       const extra = Object.assign({ autore_id: archivio.utente().id }, qui);
       const righe = [], daSegnare = [];
       for (const chiusura of lista) {
-        let valori;
-        try { valori = JSON.parse(chiusura.valori || "[]"); } catch (e) { valori = null; }
+        const valori = cassa.grigliaDi(chiusura.valori, leggiXls);
         const voci = valori ? cassa.leggiChiusura(valori) : [];
         if (!voci.length || !cassa.quandoChiusura(chiusura.nome_file)) {
           if (chiusura.stato !== "scartata") {

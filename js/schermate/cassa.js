@@ -3,6 +3,7 @@ import { h, vuoto, conConferma } from "../dom.js";
 import { qta, euro } from "../numeri.js";
 import * as regole from "../cassa.js";
 import { filtra } from "../cerca.js";
+import { leggiXls } from "../xls.js";
 
 const giorno = (iso) => (iso ? new Date(iso).toLocaleDateString("it-IT", { weekday: "short", day: "2-digit", month: "2-digit" }) : "—");
 
@@ -34,7 +35,7 @@ async function giro(ctx, fresche) {
 function chiusureCon(chiusure, codice) {
   return chiusure.filter((c) => {
     if (c.stato === "scartata") return false;
-    try { return regole.leggiChiusura(JSON.parse(c.valori || "[]")).some((v) => v.codice === codice); } catch (e) { return false; }
+    return regole.leggiChiusura(regole.grigliaDi(c.valori, leggiXls) || []).some((v) => v.codice === codice);
   });
 }
 
@@ -46,7 +47,7 @@ export async function pagina(ctx, ridisegna) {
   let fatto = { chiusure: 0, vendite: 0, scartate: 0 }, guasto = "";
   try { fatto = await guardaCassa(ctx); } catch (e) { guasto = e.message || ""; }
   const [chiusure, collegamenti, piatti] = await Promise.all([leggiChiusure(ctx), ctx.dati.collegamentiCassa(), ctx.dati.piatti()]);
-  const daSistemare = regole.vociDaSistemare(chiusure, collegamenti);
+  const daSistemare = regole.vociDaSistemare(chiusure, collegamenti, leggiXls);
   const buone = chiusure.filter((c) => c.stato !== "scartata");
   const ultima = buone.length ? regole.quandoChiusura(buone[buone.length - 1].nome_file) : null;
   const errore = h("p", { class: "errore", role: "alert" });

@@ -55,6 +55,23 @@ export function leggiChiusura(valori) {
   return Array.from(perCodice.values()).map((x) => Object.assign(x, { importo: Math.round(x.importo * 100) / 100 }));
 }
 
+// Ciò che il raccoglitore consegna è il foglio già in righe (quando su Drive c'è il foglio Google) oppure il file
+// .xls della cassa così com'è, in base64 ({ xls: "…" }). leggiXls: il lettore di app/js/xls.js.
+export function grigliaDi(valoriTesto, leggiXls) {
+  let v;
+  try { v = JSON.parse(valoriTesto || "[]"); } catch (e) { return null; }
+  if (Array.isArray(v)) return v;
+  if (v && typeof v.xls === "string" && leggiXls) {
+    try {
+      const grezzo = atob(v.xls.replace(/\s+/g, ""));
+      const bytes = new Uint8Array(grezzo.length);
+      for (let i = 0; i < grezzo.length; i += 1) bytes[i] = grezzo.charCodeAt(i);
+      return leggiXls(bytes);
+    } catch (e) { return null; }
+  }
+  return null;
+}
+
 // Il riferimento che lega una vendita alla sua voce di chiusura.
 export const riferimentoVendita = (nomeFile, codice) => nomeFile + "#" + codice;
 
@@ -89,14 +106,12 @@ export function daRegistrare(chiusura, voci, collegamenti, movimenti, extra) {
 }
 
 // Le voci di cassa che non hanno ancora un piatto, sommate su tutte le chiusure arrivate: da sistemare.
-export function vociDaSistemare(chiusure, collegamenti) {
+export function vociDaSistemare(chiusure, collegamenti, leggiXls) {
   const noti = new Set((collegamenti || []).filter((c) => c.sistema === "cassa").map((c) => codiceCassa(c.chiave)));
   const out = new Map();
   (chiusure || []).forEach((c) => {
     if (c.stato === "scartata") return;
-    let valori = [];
-    try { valori = JSON.parse(c.valori || "[]"); } catch (e) { valori = []; }
-    leggiChiusura(valori).forEach((v) => {
+    leggiChiusura(grigliaDi(c.valori, leggiXls) || []).forEach((v) => {
       if (noti.has(v.codice)) return;
       const x = out.get(v.codice) || { codice: v.codice, descrizione: v.descrizione, quantita: 0, importo: 0, chiusure: 0 };
       x.quantita += v.quantita; x.importo = Math.round((x.importo + v.importo) * 100) / 100; x.chiusure += 1;

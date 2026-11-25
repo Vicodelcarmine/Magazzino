@@ -23,6 +23,7 @@ import * as posta from "./schermate/posta.js";
 import * as preventiviPagina from "./schermate/preventivi.js";
 import * as cassaPagina from "./schermate/cassa.js";
 import { vociDaSistemare } from "./cassa.js";
+import { leggiXls } from "./xls.js";
 import { preparaSuono, suona, mostraAvviso } from "./avviso.js";
 
 const radice = document.getElementById("app");
@@ -278,7 +279,7 @@ async function controllaPosta() {
     segnaFatture();
     // Insieme alla posta, le chiusure di cassa: le nuove diventano vendite senza che nessuno apra niente.
     const cassa = await cassaPagina.guardaCassa(ctx, true);
-    vociCassa = vociDaSistemare(await cassaPagina.chiusureNote(ctx), await ctx.dati.collegamentiCassa()).length;
+    vociCassa = vociDaSistemare(await cassaPagina.chiusureNote(ctx), await ctx.dati.collegamentiCassa(), leggiXls).length;
     segnaCassa();
     if (cassa.chiusure > 0 && mostrata !== "#/cassa") {
       mostraAvviso("Arrivata la chiusura di cassa: vendite registrate" + (vociCassa ? ", " + vociCassa + " voci da sistemare" : ""),
