@@ -336,3 +336,8 @@ a.reparto-icona .contatore { margin-left: 0; }
 .lampeggia { animation: lampeggia 1s ease-in-out infinite; border-color: var(--giallo) !important; }
 @keyframes lampeggia { 50% { background: var(--giallo); color: #1a1500; } }
 @media (prefers-reduced-motion: reduce) { .lampeggia { animation: none; background: var(--giallo); color: #1a1500; } #avviso-volante { animation: none; } }
+
+/* ---------- Preventivi ---------- */
+.link-preventivo { font: .8rem ui-monospace, Menlo, monospace; color: var(--tenue); overflow-wrap: anywhere; margin: .3rem 0; user-select: all; }
+.tipo-articolo-testo { color: var(--c-articolo); font-weight: 600; }
+ul.prezzi-preventivo { flex-basis: 100%; margin: .4rem 0; background: transparent; }

@@ -9,6 +9,7 @@ import { accoda, applica, inCoda, riapplica, spedisci } from "./coda.js";
 import * as carico from "./fatture/carico.js";
 import * as regoleOrdini from "./ordini.js";
 import * as cassa from "./cassa.js";
+import * as preventivi from "./preventivi.js";
 
 export class ErroreDato extends Error {}
 
@@ -505,6 +506,59 @@ export function creaDati(archivioVero, ristoranteId, copia, spazio) {
       const piatto = await creaConCodice("piatti", "piatto", dati);
       await api.collegaVoceCassa(voce.codice, piatto.id);
       return piatto;
+    },
+
+    // ----- preventivi dei fornitori (si leggono dal vivo, solo il titolare) -----
+    async preventivi() {
+      try { return await archivioVero.leggi("preventivi", qui, "creato_il.desc"); }
+      catch (e) { if (e.tipo === "rete") return []; throw e; }
+    },
+    // Crea la richiesta e il suo link. Il fornitore può essere uno dei propri o un nome nuovo: in quel caso nasce adesso.
+    // Restituisce { preventivo, gettone }: il gettone (il link) esiste solo qui, nell'archivio va la sua impronta.
+    async creaPreventivo(nomeFornitore, giorni, articoli) {
+      const nome = String(nomeFornitore || "").trim();
+      if (!nome) throw new ErroreDato("Scrivi a quale fornitore va il preventivo.");
+      if (!articoli.length) throw new ErroreDato("Scegli almeno una categoria: il link deve avere degli articoli.");
+      let scade = null;
+      if (String(giorni == null ? "" : giorni).trim() !== "") {
+        scade = preventivi.scadeFra(giorni);
+        if (!scade) throw new ErroreDato("I giorni di validità sono un numero da 1 a 365.");
+      }
+      const tutti = await api.fornitori();
+      const fornitore = tutti.find((f) => f.nome.trim().toLowerCase() === nome.toLowerCase()) || await api.salvaFornitore({ nome: nome }, tutti);
+      const gettone = preventivi.nuovoGettone();
+      const r = await archivioVero.inserisci("preventivi", Object.assign({ id: nuovoId(), fornitore_id: fornitore.id,
+        impronta: await preventivi.improntaDi(gettone), stato: "aperto", scade: scade,
+        articoli: JSON.stringify(articoli.map((a) => ({ id: a.id, nome: a.nome, udm: a.udm }))) }, qui));
+      return { preventivo: r[0], gettone: gettone, fornitore: fornitore };
+    },
+    segnaPreventivo(id, stato) { return archivioVero.modifica("preventivi", { id: id, ristorante_id: ristoranteId }, { stato: stato }); },
+    // «Carica»: i prezzi del preventivo entrano nel confronto prezzi (come preventivi, non come fatture) e,
+    // dove il fornitore ha scritto il suo codice, lo si ricorda per riconoscere l'articolo quando arriverà la fattura.
+    async caricaPreventivo(p, associa) {
+      const [articoli, abbinamenti] = await Promise.all([api.articoli(), tutta("abbinamenti_fornitore")]);
+      const piano = preventivi.prezziDaCaricare(p, associa, articoli);
+      if (!piano.prezzi.length) throw new ErroreDato("In questo preventivo non c'è nessun prezzo che posso caricare." + (piano.saltate.length ? " " + piano.saltate.join("; ") + "." : ""));
+      await archivio.inserisci("prezzi", piano.prezzi.map((x) => Object.assign({ id: nuovoId(), articolo_id: x.articolo_id, fornitore_id: x.fornitore_id,
+        tipo: x.tipo, data: x.data, prezzo_udm: x.prezzo_udm, qta_confezione: x.qta_confezione, origine: x.origine }, qui)));
+      const noti = carico.indice(abbinamenti, p.fornitore_id);
+      const nuovi = [];
+      piano.prezzi.forEach((x) => {
+        const codice = carico.chiaveCodice(x.codice);
+        if (!codice || noti.has(codice)) return;
+        noti.set(codice, true);
+        nuovi.push(Object.assign({ id: nuovoId(), fornitore_id: p.fornitore_id, codice: codice, descrizione: "", articolo_id: x.articolo_id }, qui));
+      });
+      if (nuovi.length) { try { await archivio.inserisci("abbinamenti_fornitore", nuovi); } catch (e) { /* i codici sono un di più: i prezzi sono entrati */ } }
+      await api.segnaPreventivo(p.id, "caricato");
+      return { caricati: piano.prezzi.length, saltate: piano.saltate };
+    },
+    // Toglie dal confronto i prezzi di un preventivo già caricato (non li cancella: li annulla).
+    async togliPrezziPreventivo(preventivoId) {
+      return archivio.modifica("prezzi", { origine: "prev:" + preventivoId, ristorante_id: ristoranteId }, { annullato_il: new Date().toISOString() });
+    },
+    async prezziDaPreventivi() {
+      return (await tutta("prezzi")).filter((x) => String(x.origine || "").startsWith("prev:") && !x.annullato_il);
     },
 
     // ----- ordini ai fornitori -----

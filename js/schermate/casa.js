@@ -9,6 +9,7 @@ const LAVORO = [
   ["fatture", "🧾", "Fatture", "la merce che arriva"],
   ["spesa", "🛒", "Spesa", "cosa ordinare"],
   ["ordini", "📝", "Ordini", "inviati, in attesa di fattura"],
+  ["preventivi", "🤝", "Preventivi", "chiedi i prezzi ai fornitori"],
   ["cassa", "🧮", "Cassa", "le vendite di ogni sera"],
   ["costi", "💶", "Costi", "food cost e margini"],
   ["andamento", "📈", "Andamento", "grafici e sprechi"],
@@ -35,6 +36,8 @@ export async function pagina(ctx) {
     const ritardi = ordini.filter((o) => inRitardo(o, Date.now())).length;
     if (ritardi) segni.ordini = ["rifiutato", ritardi === 1 ? "1 fattura in ritardo" : ritardi + " fatture in ritardo"];
     else if (ordini.length) segni.ordini = ["da_completare", ordini.length + " in attesa"];
+    const arrivati = (await ctx.dati.preventivi()).filter((p) => p.stato === "inviato").length;
+    if (arrivati) segni.preventivi = ["da_completare", arrivati + " da controllare"];
     const senzaDistinta = Array.from(c.piatti.values()).filter((p) => p.stato === "da_completare" && !p.senza_merce).length;
     if (senzaDistinta) segni.piatti = ["da_completare", senzaDistinta + " senza distinta"];
   } catch (e) { /* i riquadri restano senza numeri */ }
