@@ -25,6 +25,13 @@ import * as inventario from "./schermate/inventario.js";
 import { applicaSfondo, sfondoScelto } from "./sfondo.js";
 
 applicaSfondo(sfondoScelto()); // subito, prima di disegnare qualunque cosa
+
+// Il tocco lungo non apre il menu del telefono («copia», «apri in un'altra scheda», «cerca con Google»):
+// capitava per sbaglio tenendo il dito su una riga. Nei campi dove si scrive resta, per poter incollare.
+document.addEventListener("contextmenu", (ev) => {
+  const dove = ev.target && ev.target.closest ? ev.target.closest("input, textarea, [contenteditable], .selezionabile") : null;
+  if (!dove) ev.preventDefault();
+});
 import * as cassaPagina from "./schermate/cassa.js";
 import { vociDaSistemare } from "./cassa.js";
 import { leggiXls } from "./xls.js";
