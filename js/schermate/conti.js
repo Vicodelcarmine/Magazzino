@@ -364,7 +364,7 @@ export async function costi(ctx) {
     h("span", { class: "numero" + (p.fcIncasso != null && p.fcIncasso > 0.35 ? " rosso" : "") },
       p.fcIncasso != null ? pct(p.fcIncasso) : (p.fcListino != null ? pct(p.fcListino) + " (listino)" : "—")),
     h("span", { class: "nota" }, [
-      "costo " + euro(p.costoReale),
+      "costo " + euro(p.costoReale) + (Math.abs(p.costoReale - p.costoTeorico) > 0.2 * Math.max(p.costoTeorico, 0.01) ? " (da ricetta " + euro(p.costoTeorico) + ")" : ""),
       p.incasso != null ? "incassi in media " + euro(p.incasso) : (p.listino ? "listino " + euro(p.listino) : "senza prezzo"),
       p.margine != null ? "margine " + euro(p.margine) : null,
       p.venduti ? qta(p.venduti) + " venduti" : "mai venduto",
@@ -379,18 +379,22 @@ export async function costi(ctx) {
       riquadro(euro(fc.totale.ricavo - fc.totale.costo), "margine sulla merce"),
       fc.incassoSenzaMerce > 0 ? riquadro(euro(fc.incassoSenzaMerce), "incassi senza merce (coperto e simili), fuori dal food cost") : null),
 
-    h("h3", {}, "Prezzi aumentati", h("span", { class: "nota" }, " — fra le ultime due fatture dello stesso fornitore")),
+    // Chiusi a tendina: la pagina resta corta, il numero si vede lo stesso.
+    h("details", { class: "tendina" },
+      h("summary", {}, h("strong", {}, "Prezzi aumentati"), h("span", { class: allerte.length ? "bollo rifiutato" : "nota" }, allerte.length ? String(allerte.length) : "nessuno"),
+        h("span", { class: "nota" }, "fra le ultime due fatture dello stesso fornitore")),
     allerte.length ? h("ul", { class: "lista" }, allerte.map((a) =>
       h("li", {}, h("a", { class: "riga tipo-articolo allarme", href: "#/magazzino/" + a.id },
         h("strong", {}, a.nome), h("span", { class: "numero rosso" }, "+" + pct(a.delta)),
         h("span", { class: "nota" }, a.fornitore + " · da " + euro(a.prima) + " a " + euro(a.dopo) + " al " + a.udm
           + " · " + giorno(Date.parse(a.dataPrima)) + " → " + giorno(Date.parse(a.dataDopo)))))))
-      : h("p", { class: "nota" }, "Nessun aumento sopra il " + pct(c.opz.sogliaAllerta) + "."),
+      : h("p", { class: "nota", style: "padding: 0 .9rem .7rem" }, "Nessun aumento sopra il " + pct(c.opz.sogliaAllerta) + ".")),
 
-    h("h3", {}, "Per categoria"),
-    h("ul", { class: "voci" }, fc.categorie.map((k) =>
-      h("li", { class: "voce" }, h("span", {}, k.categoria + " (" + k.piatti + ")"),
-        h("strong", {}, k.fc == null ? "—" : pct(k.fc) + " · " + euro(k.ricavo))))),
+    h("details", { class: "tendina" },
+      h("summary", {}, h("strong", {}, "Food cost per categoria"), h("span", { class: "nota" }, fc.categorie.length + " categorie")),
+      h("ul", { class: "voci" }, fc.categorie.map((k) =>
+        h("li", { class: "voce" }, h("span", {}, k.categoria + " (" + k.piatti + ")"),
+          h("strong", {}, k.fc == null ? "—" : pct(k.fc) + " · " + euro(k.ricavo)))))),
 
     h("h3", {}, "Per piatto", h("span", { class: "nota" }, " — dal food cost più alto")),
     reparti({ voci: fc.piatti, riga: riga, memoria: "costi", unita: ["piatto", "piatti"], ordina: (x, y) => peso(y) - peso(x),
