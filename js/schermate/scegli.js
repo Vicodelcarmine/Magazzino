@@ -74,7 +74,17 @@ export function sceltaArticolo(articoli, alCambio) {
     if (primo) scegli(primo);
   });
 
-  ricerca.append(...[barraCategorie(articoli, (c) => { categoria = c; disegna(); }), cerca, risultati].filter(Boolean));
+  // I reparti stanno in una tendina chiusa: sono tanti e allungavano la pagina; di solito basta scrivere il nome.
+  const scritta = h("span", { class: "nota" }, "tutti");
+  const barra = barraCategorie(articoli, (c) => {
+    categoria = c;
+    const r = categorieCon(articoli).find((x) => x.chiave === c);
+    scritta.textContent = r ? r.nome : "tutti";
+    tendina.open = false;
+    disegna();
+  });
+  const tendina = barra ? h("details", { class: "tendina tendina-reparti" }, h("summary", {}, h("strong", {}, "Scegli per reparto"), scritta), barra) : null;
+  ricerca.append(...[cerca, tendina, risultati].filter(Boolean));
   disegna();
   return h("div", { class: "scelta-articolo" }, nascosto, ricerca, scelto);
 }

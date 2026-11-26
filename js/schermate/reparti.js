@@ -37,6 +37,7 @@ const ricordo = new Map();
 //  testa     (facoltativo) (nome del reparto, voci) → qualcosa da mettere in cima al reparto aperto (es. un tasto)
 //  ordinaGruppi (facoltativo) (a, b) → ordine dei reparti (a.voci sono le voci del reparto)
 //  classeGruppo (facoltativo) (voci del reparto) → classe in più sul reparto (es. «finito»)
+//  alGruppo  (facoltativo) (elemento, nome del reparto, voci) → per agganciare qualcosa al reparto (es. lo striscio)
 //  cerca     testo del riquadro di ricerca
 //  vuoto     testo quando non c'è niente
 export function reparti(opz) {
@@ -83,10 +84,13 @@ export function reparti(opz) {
     if (stato.gruppi.length === 1) { corpo.replaceChildren(h("ul", { class: "lista" }, stato.gruppi[0].voci.map(opz.riga))); return; }
     // "" = si vedono le icone; "-" = si è dentro, con tutte le tendine chiuse.
     if (aperto !== "-" && !stato.gruppi.some((g) => g.chiave === aperto)) {
-      corpo.replaceChildren(h("div", { class: "griglia-reparti" }, stato.gruppi.map((g) =>
-        h("button", { type: "button", class: "reparto-icona" + (g.allarmi ? " allarme" : "") + (opz.classeGruppo ? " " + opz.classeGruppo(g.voci) : ""),
+      corpo.replaceChildren(h("div", { class: "griglia-reparti" }, stato.gruppi.map((g) => {
+        const b = h("button", { type: "button", class: "reparto-icona" + (g.allarmi ? " allarme" : "") + (opz.classeGruppo ? " " + opz.classeGruppo(g.voci) : ""),
           onclick: () => { scegli(g.chiave); disegna(); corpo.scrollIntoView({ block: "start" }); } },
-          h("span", { class: "icona" }, g.icona), h("strong", {}, g.nome), segni(g)))));
+          h("span", { class: "icona" }, g.icona), h("strong", {}, g.nome), segni(g));
+        if (opz.alGruppo) opz.alGruppo(b, g.nome, g.voci);
+        return b;
+      })));
       return;
     }
     corpo.replaceChildren(
@@ -97,6 +101,7 @@ export function reparti(opz) {
           // Le righe si costruiscono solo per il reparto aperto: la pagina resta leggera.
           aperto === g.chiave && opz.testa ? opz.testa(g.nome, g.voci) : null,
           aperto === g.chiave ? h("ul", { class: "lista" }, g.voci.map(opz.riga)) : null);
+        if (opz.alGruppo) opz.alGruppo(d.querySelector("summary"), g.nome, g.voci);
         d.addEventListener("toggle", () => {
           if (d.open && aperto !== g.chiave) { scegli(g.chiave); disegna(); }
           else if (!d.open && aperto === g.chiave) { scegli("-"); disegna(); }

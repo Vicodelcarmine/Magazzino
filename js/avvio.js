@@ -215,7 +215,7 @@ async function naviga() {
     let vista;
     if (sezione === "casa") vista = await casa.pagina(ctx);
     else if (sezione === "magazzino") vista = id ? await conti.articolo(ctx, id, naviga) : await conti.magazzino(ctx);
-    else if (sezione === "spesa") vista = id === "unica" ? await conti.spesaUnica(ctx, naviga) : await conti.spesa(ctx);
+    else if (sezione === "spesa") vista = id === "unica" ? await conti.spesaUnica(ctx, naviga) : await conti.spesa(ctx, naviga);
     else if (sezione === "costi") vista = await conti.costi(ctx);
     else if (sezione === "andamento") vista = await andamento.pagina(ctx);
     else if (sezione === "fatture" && id === "rivedi") vista = await fatture.rivedi(ctx);

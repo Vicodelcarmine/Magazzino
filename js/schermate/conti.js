@@ -4,6 +4,9 @@ import { h, campo, modulo, scelta, vuoto, conConferma } from "../dom.js";
 import { qta, euro } from "../numeri.js";
 import * as motore from "../motore.js";
 import { reparti } from "./reparti.js";
+import * as spostamenti from "../spostamenti.js";
+import { scordaBozza } from "./ordini.js";
+import { filtra } from "../cerca.js";
 import { categoria as segnoCategoria } from "./segni.js";
 
 const GIORNO = 86400000;
@@ -140,9 +143,39 @@ export async function articolo(ctx, id, ridisegna) {
 }
 
 // ---------- Spesa ----------
-export async function spesa(ctx) {
+// Il foglio che sale dal basso: «a quale fornitore lo sposto?». Si cerca scrivendo, come dappertutto.
+function chiediFornitore(titolo, fornitori, escluso, alScelto) {
+  const chiudi = () => velo.remove();
+  const cerca = h("input", { type: "search", placeholder: "Scrivi il nome del fornitore", "aria-label": "Cerca il fornitore", autocomplete: "off" });
+  const lista = h("ul", { class: "lista risultati" });
+  const candidati = fornitori.filter((f) => f.nome !== escluso);
+  const disegna = () => {
+    const trovati = filtra(candidati, cerca.value, "");
+    lista.replaceChildren(...trovati.map((f) => h("li", {}, h("button", { type: "button", class: "riga", onclick: () => { chiudi(); alScelto(f.nome); } },
+      h("strong", {}, "🚚 " + f.nome)))));
+    if (!trovati.length) lista.append(h("li", { class: "nota" }, "Nessun fornitore così."));
+  };
+  cerca.addEventListener("input", disegna);
+  disegna();
+  const velo = h("div", { class: "velo", onclick: (ev) => { if (ev.target === velo) chiudi(); } },
+    h("div", { class: "foglio", role: "dialog", "aria-label": titolo },
+      h("div", { class: "testata" }, h("h3", {}, titolo), h("button", { type: "button", onclick: chiudi }, "Annulla")),
+      candidati.length > 6 ? cerca : null, lista));
+  document.body.append(velo);
+}
+
+export async function spesa(ctx, ridisegna) {
   const c = await conti(ctx);
   const sp = motore.spesa(c);
+  const mossi = spostamenti.leggi(ctx.ristorante.id);
+  const righe = spostamenti.applica(sp.righe, mossi).map((r) => Object.assign({}, r, { fornitoreSpesa: r.fornitore || spostamenti.SENZA }));
+  const quantiFornitori = new Set(righe.map((r) => r.fornitoreSpesa)).size;
+  const quantiSpostati = righe.filter((r) => r.spostatoDa).length;
+  const tuttiFornitori = Array.from(c.fornitori.values()).filter((f) => f.attivo !== false).sort((x, y) => x.nome.localeCompare(y.nome, "it"));
+  const dopo = () => { scordaBozza(); (ridisegna || (() => location.reload()))(); };
+  const spostaRighe = (lista, da) => chiediFornitore(lista.length === 1 ? "Sposta «" + lista[0].nome + "» a…" : "Sposta tutto " + da + " (" + lista.length + " articoli) a…",
+    tuttiFornitori, da, (a) => { spostamenti.sposta(ctx.ristorante.id, lista, a); dopo(); });
+  const rimettiRighe = (lista) => { spostamenti.rimetti(ctx.ristorante.id, lista); dopo(); };
   const quanto = (r) => (r.colli != null
     ? r.colli + (r.colli === 1 ? " confezione" : " confezioni") + " da " + qta(r.qtaConfezione) + " " + r.udm
     : qta(r.quantita) + " " + r.udm);
@@ -157,27 +190,41 @@ export async function spesa(ctx) {
     h("div", { class: "riquadri" },
       riquadro(String(sp.righe.length), "articoli da ordinare"),
       riquadro(euro(sp.totale) + (sp.parziale ? " +" : ""), "spesa prevista"),
-      riquadro(String(sp.gruppi.length), "fornitori")),
+      riquadro(String(quantiFornitori), "fornitori")),
+    sp.righe.length ? h("p", { class: "nota" }, "Per passare un articolo a un altro fornitore strisciaci sopra verso destra (o tocca ⇄). Strisciando sul fornitore sposti tutta la sua lista. Vale per questa spesa: finisce quando salvi l'ordine.") : null,
+    quantiSpostati ? h("p", { class: "nota avviso" }, "↪ " + (quantiSpostati === 1 ? "1 articolo spostato" : quantiSpostati + " articoli spostati") + " da te a un altro fornitore.  ",
+      conConferma("Rimetti tutto com'era", "Sì, annulla gli spostamenti", () => rimettiRighe(righe.filter((r) => r.spostatoDa)), "leggero")) : null,
     sp.righe.length ? reparti({
-      voci: sp.gruppi.flatMap((g) => g.righe.map((r) => Object.assign({ fornitoreSpesa: g.fornitore }, r))),
+      voci: righe,
       gruppoDi: (r) => r.fornitoreSpesa, icona: "🚚", memoria: "spesa", unita: ["articolo", "articoli"],
-      // In cima a ogni fornitore: da qui si prepara il suo ordine con queste quantità.
-      testa: (nome) => {
+      // In cima a ogni fornitore: da qui si prepara il suo ordine con queste quantità, o si passa tutto a un altro.
+      testa: (nome, voci) => {
         const f = Array.from(c.fornitori.values()).find((x) => x.nome === nome);
-        return f ? h("p", { class: "testa-reparto" }, h("a", { class: "pulsante primario", href: "#/ordine-nuovo/" + f.id }, "Prepara l'ordine a " + nome)) : null;
+        return h("p", { class: "testa-reparto" },
+          f ? h("a", { class: "pulsante primario", href: "#/ordine-nuovo/" + f.id }, "Prepara l'ordine a " + nome) : null,
+          h("button", { type: "button", onclick: () => spostaRighe(voci, nome) }, "⇄ Sposta tutto a un altro fornitore"));
       },
-      valore: (righe) => euro(righe.reduce((s, r) => s + (r.costo || 0), 0)) + (righe.some((r) => r.costo == null) ? " +" : ""),
+      ordinaGruppi: (x, y) => x.nome.localeCompare(y.nome, "it"),
+      alGruppo: (el, nome, voci) => spostamenti.strisciabile(el, () => spostaRighe(voci, nome)),
+      classeGruppo: (voci) => (voci.some((r) => r.spostatoDa) ? "con-spostati" : ""),
+      valore: (voci) => euro(voci.reduce((s, r) => s + (r.costo || 0), 0)) + (voci.some((r) => r.costo == null) ? " +" : "")
+        + (voci.some((r) => r.spostatoDa) ? " · ↪ " + voci.filter((r) => r.spostatoDa).length + " spostati qui" : ""),
       allarme: (r) => r.costo == null, etichettaAllarme: (n) => n + " senza prezzo",
       cerca: "Cerca un articolo da ordinare",
-      riga: (r) => h("li", {}, h("a", { class: "riga tipo-articolo", href: "#/magazzino/" + r.id },
+      riga: (r) => spostamenti.strisciabile(h("li", { class: r.spostatoDa ? "spostato" : "" }, h("a", { class: "riga tipo-articolo", href: "#/magazzino/" + r.id },
         h("strong", {}, r.nome),
         h("span", { class: "numero" }, quanto(r)),
+        r.spostatoDa ? h("span", { class: "bollo da_completare" }, "↪ spostato da " + r.spostatoDa) : null,
         h("span", { class: "nota" }, [
           r.costo == null ? "senza prezzo" : euro(r.costo),
           "in magazzino " + qta(Math.max(0, r.giacenza)) + " " + r.udm,
           "servono " + qta(r.fabbisogno) + " " + r.udm,
         ].join(" · ")),
-        r.avviso ? h("span", { class: "nota avviso" }, r.avviso) : null)) })
+        r.avviso ? h("span", { class: "nota avviso" }, r.avviso) : null),
+        h("span", { class: "dose sotto-riga" },
+          h("button", { type: "button", class: "leggero", onclick: () => spostaRighe([r], r.fornitoreSpesa) }, "⇄ Sposta"),
+          r.spostatoDa ? h("button", { type: "button", class: "leggero", onclick: () => rimettiRighe([r]) }, "↩ Rimetti a " + r.spostatoDa) : null)),
+        () => spostaRighe([r], r.fornitoreSpesa)) })
       : vuoto("Niente da ordinare: quello che c'è in magazzino copre i prossimi giorni."));
 }
 

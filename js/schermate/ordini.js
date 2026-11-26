@@ -5,6 +5,7 @@ import * as motore from "../motore.js";
 import * as regole from "../ordini.js";
 import { sceltaArticolo } from "./scegli.js";
 import { blocchiConfronto } from "./fatture.js";
+import * as spostamenti from "../spostamenti.js";
 
 const giorno = (d) => (d ? new Date(d).toLocaleDateString("it-IT", { weekday: "short", day: "2-digit", month: "2-digit" }) : "—");
 const dataBreve = (d) => { const p = String(d || "").slice(0, 10).split("-"); return p.length === 3 ? p[2] + "/" + p[1] : "—"; };
@@ -40,6 +41,8 @@ export async function elenco(ctx) {
 
 // ---------- ordine nuovo, partendo da ciò che la Spesa propone per quel fornitore ----------
 let bozza = null; // { fornitoreId, righe, nota }: resta se si esce un attimo dalla pagina
+// Quando nella Spesa si sposta qualcosa da un fornitore all'altro, l'ordine va ripreparato da capo.
+export function scordaBozza() { bozza = null; }
 
 export async function nuovo(ctx, fornitoreId) {
   const fornitori = await ctx.dati.fornitori();
@@ -48,9 +51,9 @@ export async function nuovo(ctx, fornitoreId) {
   const articoli = (await ctx.dati.articoli()).filter((a) => a.attivo !== false && !a.prodotto_in_cucina);
   if (!bozza || bozza.fornitoreId !== fornitoreId) {
     const c = motore.prepara(await ctx.dati.perIConti(ctx.ristorante));
-    const proposte = motore.spesa(c).righe.filter((r) => r.fornitore === fornitore.nome);
+    const proposte = spostamenti.applica(motore.spesa(c).righe, spostamenti.leggi(ctx.ristorante.id)).filter((r) => r.fornitore === fornitore.nome);
     bozza = { fornitoreId: fornitoreId, nota: "", righe: proposte.map((r) => ({ articolo_id: r.id, nome: r.nome, udm: r.udm,
-      qtaConfezione: r.colli != null ? r.qtaConfezione : null, colli: r.colli, quantita: r.quantita, proposta: true })) };
+      qtaConfezione: r.colli != null ? r.qtaConfezione : null, colli: r.colli, quantita: r.quantita, proposta: true, spostatoDa: r.spostatoDa || "" })) };
   }
   const b = bozza;
   const lista = h("ul", { class: "lista" });
@@ -73,6 +76,7 @@ export async function nuovo(ctx, fornitoreId) {
     const li = h("li", { class: "riga tipo-articolo" + (Number(r.quantita) > 0 ? "" : " spento") },
       h("strong", {}, r.nome),
       h("span", { class: "dose" }, campo, h("span", {}, aConfezioni ? "confezioni da " + qta(r.qtaConfezione) + " " + r.udm : r.udm)),
+      r.spostatoDa ? h("span", { class: "bollo da_completare" }, "↪ spostato da " + r.spostatoDa) : null,
       h("span", { class: "nota" }, r.proposta ? "proposto dalla Spesa" : "aggiunto da te", " · metti 0 per non ordinarlo"));
     return li;
   }
@@ -102,6 +106,7 @@ export async function nuovo(ctx, fornitoreId) {
     salva.disabled = true;
     try {
       const o = await ctx.dati.creaOrdine(fornitore, buone(), b.nota);
+      spostamenti.ordinati(ctx.ristorante.id, buone().map((r) => r.articolo_id)); // lo spostamento ha fatto il suo lavoro
       bozza = null;
       location.hash = "#/ordini/" + o.id;
     } catch (e) { errore.textContent = e.message || "L'ordine non è stato salvato."; salva.disabled = false; }
