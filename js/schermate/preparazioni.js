@@ -76,7 +76,7 @@ export async function scheda(ctx, id, ridisegna) {
 
     await usatoIn(ctx, p, piatti, articoli),
 
-    ctx.titolare ? h("details", {},
+    ctx.titolare ? h("details", { class: "tasto-scheda" },
       h("summary", {}, "Nome, unità e dose abituale"),
       modulo(campi(p, articoli), "Salva", async (d) => {
         await ctx.dati.salvaPreparazione(Object.assign({ id: p.id }, d));

@@ -33,7 +33,7 @@ export async function scheda(ctx, id, ridisegna) {
       perCosa: "una porzione", modificabile: ctx.titolare && !archiviato, ridisegna: ridisegna,
     })],
 
-    ctx.titolare ? h("details", {},
+    ctx.titolare ? h("details", { class: "tasto-scheda" },
       h("summary", {}, "Nome, categoria e prezzo"),
       modulo(campiPiatto(piatto, piatti), "Salva", async (d) => {
         if (!String(d.categoria || "").trim()) throw new Error("Scegli la categoria del piatto.");
