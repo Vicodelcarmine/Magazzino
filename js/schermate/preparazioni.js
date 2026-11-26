@@ -1,6 +1,6 @@
 // Preparazioni fatte in cucina (impasto, sugo, salse): articoli con una ricetta loro,
 // che poi si usano come ingredienti nei piatti o in altre preparazioni.
-import { h, campo, modulo, scelta, spunta, suggerimenti, vuoto } from "../dom.js";
+import { h, campo, modulo, scelta, spunta, sceltaCategoria, vuoto } from "../dom.js";
 import { qta, perCampo } from "../numeri.js";
 import { categorie } from "../codici.js";
 import { righeAperte, vietatiPer } from "../convalida.js";
@@ -31,10 +31,8 @@ export async function elenco(ctx) {
 function campi(p, articoli) {
   return [
     campo("Nome", h("input", { name: "nome", value: p.nome || "", required: true, autocomplete: "off" })),
-    campo("Categoria", h("input", {
-      name: "categoria", value: p.categoria || "", list: "categorie-preparazioni", autocomplete: "off",
-    }), "Per esempio Impasti, Salse, Basi."),
-    suggerimenti("categorie-preparazioni", categorie(articoli.filter((a) => a.prodotto_in_cucina))),
+    campo("Categoria", sceltaCategoria(p.categoria, categorie(articoli.filter((a) => a.prodotto_in_cucina))),
+      "Per esempio Impasti, Salse, Basi. Per una categoria nuova c'è la voce in fondo all'elenco."),
     campo("Unità di misura", scelta("udm", UNITA, p.udm || "kg"),
       "È l'unità in cui la conti. Nelle ricette potrai scrivere anche grammi e centilitri."),
     campo("Quanta ne prepari di solito", h("input", {

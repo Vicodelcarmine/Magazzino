@@ -36,6 +36,7 @@ export async function scheda(ctx, id, ridisegna) {
     ctx.titolare ? h("details", {},
       h("summary", {}, "Nome, categoria e prezzo"),
       modulo(campiPiatto(piatto, piatti), "Salva", async (d) => {
+        if (!String(d.categoria || "").trim()) throw new Error("Scegli la categoria del piatto.");
         await ctx.dati.salvaPiatto(Object.assign({ id: piatto.id }, d));
         ridisegna();
       }, archiviato

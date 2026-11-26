@@ -1,5 +1,5 @@
 // Articoli di magazzino: ciò che si compra e si conta. Colore: blu.
-import { h, campo, modulo, scelta, spunta, suggerimenti, vuoto } from "../dom.js";
+import { h, campo, modulo, scelta, spunta, sceltaCategoria, vuoto } from "../dom.js";
 import { qta, perCampo } from "../numeri.js";
 import { categorie } from "../codici.js";
 import { reparti } from "./reparti.js";
@@ -35,10 +35,8 @@ export async function elenco(ctx) {
 export function campiArticolo(a, articoli, corto, fornitori) {
   return [
     campo("Nome", h("input", { name: "nome", value: a.nome || "", required: true, autocomplete: "off" })),
-    campo("Categoria di magazzino", h("input", {
-      name: "categoria", value: a.categoria || "", list: "categorie-articoli", autocomplete: "off",
-    }), "Per esempio Dispensa, Latticini, Liquori. Serve a ritrovarlo in fretta fra tanti."),
-    suggerimenti("categorie-articoli", categorie(articoli.filter((x) => !x.prodotto_in_cucina))),
+    campo("Categoria di magazzino", sceltaCategoria(a.categoria, categorie(articoli.filter((x) => !x.prodotto_in_cucina))),
+      "Si sceglie fra quelle che ci sono; per una categoria nuova c'è la voce in fondo all'elenco."),
     campo("Unità di misura", scelta("udm", UNITA, a.udm || "kg"),
       "È l'unità in cui lo conti in magazzino. Nelle ricette potrai scrivere anche grammi e centilitri."),
     campo("Contenuto di una confezione", h("input", {

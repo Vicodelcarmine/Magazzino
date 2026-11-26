@@ -156,3 +156,26 @@ export function conConferma(testo, testoConferma, azione, classe) {
   riposo();
   return guscio;
 }
+
+// La categoria si SCEGLIE fra quelle che esistono già: scrivendola a mano nascevano doppioni («Primi», «primi », «Primo»).
+// Per crearne una nuova c'è una voce apposta in fondo all'elenco, così non capita per sbaglio.
+export function sceltaCategoria(valore, esistenti) {
+  const NUOVA = "\u0000nuova";
+  const attuale = String(valore || "").trim();
+  const voci = (esistenti || []).slice();
+  if (attuale && !voci.some((v) => v.toLowerCase() === attuale.toLowerCase())) voci.unshift(attuale);
+  const giusta = voci.find((v) => v.toLowerCase() === attuale.toLowerCase()) || "";
+  const sel = h("select", { name: "categoria", "aria-label": "Categoria" },
+    h("option", { value: "", selected: !giusta }, "— scegli la categoria —"),
+    voci.map((v) => h("option", { value: v, selected: v === giusta }, v)),
+    h("option", { value: NUOVA }, "＋ Nuova categoria…"));
+  const nuova = h("input", { autocomplete: "off", placeholder: "Nome della nuova categoria", "aria-label": "Nuova categoria", hidden: true });
+  const torna = h("button", { type: "button", class: "leggero", hidden: true, onclick: () => mostra(false) }, "‹ Scegli fra quelle che ci sono");
+  function mostra(scrivo) {
+    sel.hidden = scrivo; nuova.hidden = !scrivo; torna.hidden = !scrivo;
+    if (scrivo) { sel.removeAttribute("name"); nuova.setAttribute("name", "categoria"); nuova.focus(); }
+    else { nuova.removeAttribute("name"); nuova.value = ""; sel.setAttribute("name", "categoria"); sel.value = giusta; }
+  }
+  sel.addEventListener("change", () => { if (sel.value === NUOVA) mostra(true); });
+  return h("span", { class: "scelta-categoria" }, sel, nuova, torna);
+}
