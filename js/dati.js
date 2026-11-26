@@ -202,6 +202,10 @@ export function creaDati(archivioVero, ristoranteId, copia, spazio) {
       const dati = controlla(convalida.articolo(input));
       return input.id ? modifica("articoli", input.id, dati) : creaConCodice("articoli", "articolo", dati);
     },
+    // «Questo articolo sempre da quel fornitore» (fornitoreId vuoto = torna a vincere il prezzo migliore).
+    fissaFornitore(articoloId, fornitoreId) {
+      return modifica("articoli", articoloId, { fornitore_fisso_id: fornitoreId || null });
+    },
     salvaPreparazione(input) {
       const dati = controlla(convalida.preparazione(input));
       return input.id ? modifica("articoli", input.id, dati) : creaConCodice("articoli", "preparazione", dati);

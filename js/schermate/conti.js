@@ -151,7 +151,7 @@ function chiediFornitore(titolo, fornitori, escluso, alScelto) {
   const candidati = fornitori.filter((f) => f.nome !== escluso);
   const disegna = () => {
     const trovati = filtra(candidati, cerca.value, "");
-    lista.replaceChildren(...trovati.map((f) => h("li", {}, h("button", { type: "button", class: "riga", onclick: () => { chiudi(); alScelto(f.nome); } },
+    lista.replaceChildren(...trovati.map((f) => h("li", {}, h("button", { type: "button", class: "riga", onclick: () => { chiudi(); alScelto(f); } },
       h("strong", {}, "🚚 " + f.nome)))));
     if (!trovati.length) lista.append(h("li", { class: "nota" }, "Nessun fornitore così."));
   };
@@ -160,6 +160,7 @@ function chiediFornitore(titolo, fornitori, escluso, alScelto) {
   const velo = h("div", { class: "velo", onclick: (ev) => { if (ev.target === velo) chiudi(); } },
     h("div", { class: "foglio", role: "dialog", "aria-label": titolo },
       h("div", { class: "testata" }, h("h3", {}, titolo), h("button", { type: "button", onclick: chiudi }, "Annulla")),
+      h("p", { class: "nota" }, "Resta spostato finché non lo rimetti a posto tu."),
       candidati.length > 6 ? cerca : null, lista));
   document.body.append(velo);
 }
@@ -167,18 +168,32 @@ function chiediFornitore(titolo, fornitori, escluso, alScelto) {
 export async function spesa(ctx, ridisegna) {
   const c = await conti(ctx);
   const sp = motore.spesa(c);
-  const mossi = spostamenti.leggi(ctx.ristorante.id);
-  const righe = spostamenti.applica(sp.righe, mossi).map((r) => Object.assign({}, r, { fornitoreSpesa: r.fornitore || spostamenti.SENZA }));
-  const quantiFornitori = new Set(righe.map((r) => r.fornitoreSpesa)).size;
-  const quantiSpostati = righe.filter((r) => r.spostatoDa).length;
-  const tuttiFornitori = Array.from(c.fornitori.values()).filter((f) => f.attivo !== false).sort((x, y) => x.nome.localeCompare(y.nome, "it"));
-  const dopo = () => { scordaBozza(); (ridisegna || (() => location.reload()))(); };
-  const spostaRighe = (lista, da) => chiediFornitore(lista.length === 1 ? "Sposta «" + lista[0].nome + "» a…" : "Sposta tutto " + da + " (" + lista.length + " articoli) a…",
-    tuttiFornitori, da, (a) => { spostamenti.sposta(ctx.ristorante.id, lista, a); dopo(); });
-  const rimettiRighe = (lista) => { spostamenti.rimetti(ctx.ristorante.id, lista); dopo(); };
   const quanto = (r) => (r.colli != null
     ? r.colli + (r.colli === 1 ? " confezione" : " confezioni") + " da " + qta(r.qtaConfezione) + " " + r.udm
     : qta(r.quantita) + " " + r.udm);
+  const tuttiFornitori = Array.from(c.fornitori.values()).filter((f) => f.attivo !== false).sort((x, y) => x.nome.localeCompare(y.nome, "it"));
+  const spostati = sp.righe.filter((r) => r.spostato);
+  const errore = h("p", { class: "errore", role: "alert" });
+  const lavoro = h("p", { class: "nota avviso", role: "status" });
+  let occupato = false;
+  // Lo spostamento è una regola dell'articolo, scritta nell'archivio: fornitore = null la toglie (torna a vincere il prezzo).
+  const fissa = async (lista, fornitore) => {
+    if (occupato) return;
+    occupato = true;
+    errore.textContent = "";
+    lavoro.textContent = lista.length === 1 ? "Sposto «" + lista[0].nome + "»…" : "Sposto " + lista.length + " articoli…";
+    try {
+      for (const r of lista) await ctx.dati.fissaFornitore(r.id, fornitore ? fornitore.id : null);
+      scordaBozza();
+      (ridisegna || (() => location.reload()))();
+    } catch (e) { lavoro.textContent = ""; errore.textContent = e.message || "Lo spostamento non è stato salvato."; }
+    finally { occupato = false; }
+  };
+  const spostaRighe = (lista, da) => {
+    if (!ctx.titolare) { errore.textContent = "Solo il titolare può spostare gli articoli da un fornitore all'altro."; return; }
+    chiediFornitore(lista.length === 1 ? "Sposta «" + lista[0].nome + "» a…" : "Sposta tutto " + da + " (" + lista.length + " articoli) a…",
+      tuttiFornitori, da, (f) => fissa(lista, f));
+  };
   return h("section", {},
     h("div", { class: "testata" }, h("h2", {}, "Spesa"), h("a", { class: "pulsante", href: "#/ordini" }, "Ordini inviati")),
     h("div", { class: "filtri" },
@@ -190,12 +205,13 @@ export async function spesa(ctx, ridisegna) {
     h("div", { class: "riquadri" },
       riquadro(String(sp.righe.length), "articoli da ordinare"),
       riquadro(euro(sp.totale) + (sp.parziale ? " +" : ""), "spesa prevista"),
-      riquadro(String(quantiFornitori), "fornitori")),
-    sp.righe.length ? h("p", { class: "nota" }, "Per passare un articolo a un altro fornitore strisciaci sopra verso destra (o tocca ⇄). Strisciando sul fornitore sposti tutta la sua lista. Vale per questa spesa: finisce quando salvi l'ordine.") : null,
-    quantiSpostati ? h("p", { class: "nota avviso" }, "↪ " + (quantiSpostati === 1 ? "1 articolo spostato" : quantiSpostati + " articoli spostati") + " da te a un altro fornitore.  ",
-      conConferma("Rimetti tutto com'era", "Sì, annulla gli spostamenti", () => rimettiRighe(righe.filter((r) => r.spostatoDa)), "leggero")) : null,
+      riquadro(String(sp.gruppi.length), "fornitori")),
+    sp.righe.length ? h("p", { class: "nota" }, "Per passare un articolo a un altro fornitore strisciaci sopra verso destra (o tocca ⇄). Strisciando sul fornitore sposti tutta la sua lista. Resta spostato finché non lo rimetti a posto tu.") : null,
+    spostati.length ? h("p", { class: "nota avviso" }, "↪ " + (spostati.length === 1 ? "1 articolo di questa spesa è stato spostato" : spostati.length + " articoli di questa spesa sono stati spostati") + " da te.  ",
+      ctx.titolare ? conConferma("Rimetti tutto com'era", "Sì, torna a vincere il prezzo migliore", () => fissa(spostati, null), "leggero") : null) : null,
+    lavoro, errore,
     sp.righe.length ? reparti({
-      voci: righe,
+      voci: sp.righe.map((r) => Object.assign({}, r, { fornitoreSpesa: r.fornitore || "Senza fornitore" })),
       gruppoDi: (r) => r.fornitoreSpesa, icona: "🚚", memoria: "spesa", unita: ["articolo", "articoli"],
       // In cima a ogni fornitore: da qui si prepara il suo ordine con queste quantità, o si passa tutto a un altro.
       testa: (nome, voci) => {
@@ -206,15 +222,15 @@ export async function spesa(ctx, ridisegna) {
       },
       ordinaGruppi: (x, y) => x.nome.localeCompare(y.nome, "it"),
       alGruppo: (el, nome, voci) => spostamenti.strisciabile(el, () => spostaRighe(voci, nome)),
-      classeGruppo: (voci) => (voci.some((r) => r.spostatoDa) ? "con-spostati" : ""),
+      classeGruppo: (voci) => (voci.some((r) => r.spostato) ? "con-spostati" : ""),
       valore: (voci) => euro(voci.reduce((s, r) => s + (r.costo || 0), 0)) + (voci.some((r) => r.costo == null) ? " +" : "")
-        + (voci.some((r) => r.spostatoDa) ? " · ↪ " + voci.filter((r) => r.spostatoDa).length + " spostati qui" : ""),
+        + (voci.some((r) => r.spostato) ? " · ↪ " + voci.filter((r) => r.spostato).length + " spostati qui" : ""),
       allarme: (r) => r.costo == null, etichettaAllarme: (n) => n + " senza prezzo",
       cerca: "Cerca un articolo da ordinare",
-      riga: (r) => spostamenti.strisciabile(h("li", { class: r.spostatoDa ? "spostato" : "" }, h("a", { class: "riga tipo-articolo", href: "#/magazzino/" + r.id },
+      riga: (r) => spostamenti.strisciabile(h("li", { class: r.spostato ? "spostato" : "" }, h("a", { class: "riga tipo-articolo", href: "#/magazzino/" + r.id },
         h("strong", {}, r.nome),
         h("span", { class: "numero" }, quanto(r)),
-        r.spostatoDa ? h("span", { class: "bollo da_completare" }, "↪ spostato da " + r.spostatoDa) : null,
+        r.spostato ? h("span", { class: "bollo da_completare" }, "↪ spostato qui da te" + (r.spostatoDa ? " (da " + r.spostatoDa + ")" : "")) : null,
         h("span", { class: "nota" }, [
           r.costo == null ? "senza prezzo" : euro(r.costo),
           "in magazzino " + qta(Math.max(0, r.giacenza)) + " " + r.udm,
@@ -223,7 +239,8 @@ export async function spesa(ctx, ridisegna) {
         r.avviso ? h("span", { class: "nota avviso" }, r.avviso) : null),
         h("span", { class: "dose sotto-riga" },
           h("button", { type: "button", class: "leggero", onclick: () => spostaRighe([r], r.fornitoreSpesa) }, "⇄ Sposta"),
-          r.spostatoDa ? h("button", { type: "button", class: "leggero", onclick: () => rimettiRighe([r]) }, "↩ Rimetti a " + r.spostatoDa) : null)),
+          r.spostato && ctx.titolare ? h("button", { type: "button", class: "leggero", onclick: () => fissa([r], null) },
+            r.spostatoDa ? "↩ Rimetti a " + r.spostatoDa : "↩ Rimetti com'era") : null)),
         () => spostaRighe([r], r.fornitoreSpesa)) })
       : vuoto("Niente da ordinare: quello che c'è in magazzino copre i prossimi giorni."));
 }

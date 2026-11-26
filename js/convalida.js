@@ -38,18 +38,18 @@ export function articolo(input) {
   const tipo = input.tipo === "tempo" ? "tempo" : "ricetta";
   const conf = numeroNonNegativo(input.qta_confezione);
   if (conf == null) return no("Il contenuto della confezione non è un numero.");
-  return {
-    ok: true,
-    dati: {
-      nome: nome,
-      categoria: pulisci(input.categoria),
-      udm: input.udm,
-      tipo: tipo,
-      qta_confezione: conf,
-      acquisto_sfuso: !!input.acquisto_sfuso,
-      attivo: input.attivo !== false,
-    },
+  const dati = {
+    nome: nome,
+    categoria: pulisci(input.categoria),
+    udm: input.udm,
+    tipo: tipo,
+    qta_confezione: conf,
+    acquisto_sfuso: !!input.acquisto_sfuso,
+    attivo: input.attivo !== false,
   };
+  // Il fornitore fisso si tocca solo dove lo si può scegliere: i moduli corti non lo cancellano.
+  if (Object.prototype.hasOwnProperty.call(input, "fornitore_fisso_id")) dati.fornitore_fisso_id = input.fornitore_fisso_id || null;
+  return { ok: true, dati: dati };
 }
 
 export function piatto(input) {

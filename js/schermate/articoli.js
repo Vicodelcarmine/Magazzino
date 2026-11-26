@@ -32,7 +32,7 @@ export async function elenco(ctx) {
 
 // I campi dell'articolo, usati anche dalla distinta base per «articolo nuovo sul momento».
 // Il codice non è fra i campi: lo assegna il sistema quando l'articolo nasce.
-export function campiArticolo(a, articoli, corto) {
+export function campiArticolo(a, articoli, corto, fornitori) {
   return [
     campo("Nome", h("input", { name: "nome", value: a.nome || "", required: true, autocomplete: "off" })),
     campo("Categoria di magazzino", h("input", {
@@ -47,19 +47,22 @@ export function campiArticolo(a, articoli, corto) {
     }), "Per esempio 15 se il collo è da 15 kg, 1 se la bottiglia è da 1 litro. Vuoto se non lo sai."),
     corto ? null : campo("Come si consuma", scelta("tipo", TIPI, a.tipo || "ricetta")),
     corto ? null : spunta("acquisto_sfuso", "Si compra sfuso (a peso, non a confezioni)", a.acquisto_sfuso),
+    corto || !fornitori ? null : campo("Fornitore fisso", scelta("fornitore_fisso_id",
+      [["", "— nessuno: vince il prezzo migliore —"]].concat(fornitori.filter((f) => f.attivo !== false || f.id === a.fornitore_fisso_id).map((f) => [f.id, f.nome])),
+      a.fornitore_fisso_id || ""), "Se lo scegli, la Spesa mette questo articolo sempre nel suo ordine, anche quando un altro costa meno."),
     corto ? null : spunta("attivo", "Articolo attivo", a.attivo !== false),
   ];
 }
 
 export async function scheda(ctx, id) {
-  const [articoli, piatti] = await Promise.all([ctx.dati.articoli(), ctx.dati.piatti()]);
+  const [articoli, piatti, fornitori] = await Promise.all([ctx.dati.articoli(), ctx.dati.piatti(), ctx.dati.fornitori()]);
   const a = id === "nuovo" ? {} : articoli.find((x) => x.id === id);
   if (!a) return vuoto("Articolo non trovato.");
   return h("section", { class: "tipo-articolo" },
     h("h2", {}, a.id ? [a.nome, " ", segnoCodice("articolo", a.codice)] : "Nuovo articolo di magazzino"),
     a.id ? await usatoIn(ctx, a, piatti, articoli) : null,
     a.id ? h("h3", {}, "Dati dell'articolo") : null,
-    modulo(campiArticolo(a, articoli, false), "Salva", async (d) => {
+    modulo(campiArticolo(a, articoli, false, fornitori), "Salva", async (d) => {
       await ctx.dati.salvaArticolo(Object.assign({ id: a.id }, d));
       location.hash = "#/articoli";
     }),

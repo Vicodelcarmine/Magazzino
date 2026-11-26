@@ -223,6 +223,13 @@ function piuRecente(a, b) {
   return fb > fa ? b : a;
 }
 
+// Il fornitore da cui il titolare vuole SEMPRE comprare l'articolo, se l'ha deciso e il fornitore c'è ancora.
+export function fornitoreFisso(c, a) {
+  if (!a || !a.fornitore_fisso_id) return null;
+  const f = c.fornitori.get(a.fornitore_fisso_id);
+  return f && f.attivo !== false ? f : null;
+}
+
 export function prezzo(c, articoloId) {
   const a = c.articoli.get(articoloId);
   const perFornitore = new Map();
@@ -236,14 +243,20 @@ export function prezzo(c, articoloId) {
     if (scaduto(c, p)) { if (!vecchio || Number(p.prezzo_udm) < Number(vecchio.prezzo_udm)) vecchio = p; }
     else if (!valido || Number(p.prezzo_udm) < Number(valido.prezzo_udm) - 1e-12) valido = p;
   });
-  const scelto = valido || vecchio; // senza prezzi validi resta l'ultimo conosciuto, ma segnalato
+  // Fornitore fisso: se il titolare ha deciso «sempre da lui», vale il suo prezzo anche se non è il più basso.
+  const fisso = fornitoreFisso(c, a);
+  const suo = fisso ? perFornitore.get(fisso.id) : null;
+  const perPrezzo = valido || vecchio; // chi vincerebbe guardando solo il prezzo
+  const scelto = suo || perPrezzo; // senza prezzi validi resta l'ultimo conosciuto, ma segnalato
   if (!scelto) return null;
+  if (suo) valido = scaduto(c, suo) ? null : suo;
   const f = c.fornitori.get(scelto.fornitore_id);
   const conf = Number(scelto.qta_confezione) > 0 ? Number(scelto.qta_confezione) : (a ? Number(a.qta_confezione) || 0 : 0);
   return {
     fornitoreId: scelto.fornitore_id, fornitore: f ? f.nome : "", prezzoUdm: Number(scelto.prezzo_udm),
     qtaConfezione: conf, tipo: scelto.tipo === "preventivo" ? "preventivo" : "fattura",
     data: String(scelto.data || "").slice(0, 10), scaduto: !valido,
+    migliore: perPrezzo ? (c.fornitori.get(perPrezzo.fornitore_id) || { nome: "" }).nome : "",
   };
 }
 
@@ -286,7 +299,7 @@ export function profilo(c, articoloId) {
     consumoMedio: consumoMedio, fonteConsumo: fonte, giorniBase: giorniBase, giorniCopertura: copertura,
     fabbisogno: fabbisogno, daComprare: Math.max(0, fabbisogno - disponibile),
     autonomia: consumoMedio > EPS ? disponibile / consumoMedio : null,
-    prezzo: pr, acquistoSfuso: !!a.acquisto_sfuso,
+    prezzo: pr, acquistoSfuso: !!a.acquisto_sfuso, fornitoreFisso: (fornitoreFisso(c, a) || { nome: "" }).nome,
     qtaConfezione: pr && pr.qtaConfezione > 0 ? pr.qtaConfezione : (Number(a.qta_confezione) || 0),
   };
 }
@@ -311,8 +324,13 @@ function rigaOrdine(p) {
     if (p.prezzo.scaduto) avvisi.push("Prezzo vecchio (" + p.prezzo.data + "): da riconfermare.");
   } else avvisi.push("Nessun prezzo: serve una fattura o un preventivo.");
   if (p.giacenzaNegativa) avvisi.push("Giacenza sotto zero: va ricontato.");
+  if (p.fornitoreFisso && p.prezzo && p.prezzo.fornitore !== p.fornitoreFisso) {
+    avvisi.push("Da " + p.fornitoreFisso + " non c'è ancora un prezzo: il costo è quello di " + p.prezzo.fornitore + ".");
+  }
   return Object.assign({}, p, {
-    fornitore: p.prezzo ? p.prezzo.fornitore : "", colli: colli, quantita: quantita, unita: unita, costo: costo,
+    fornitore: p.fornitoreFisso || (p.prezzo ? p.prezzo.fornitore : ""),
+    // Spostato dal titolare: dove starebbe guardando solo il prezzo («» se non c'era nessun fornitore).
+    spostato: !!p.fornitoreFisso, spostatoDa: p.fornitoreFisso && p.prezzo && p.prezzo.migliore !== p.fornitoreFisso ? p.prezzo.migliore : "", colli: colli, quantita: quantita, unita: unita, costo: costo,
     avviso: avvisi.join(" "),
   });
 }
