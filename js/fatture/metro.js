@@ -8,7 +8,10 @@
 
 const TOL = 0.05;
 const UOM = { CF: 1, KG: 1, LA: 1, BS: 1, VC: 1, BT: 1, CT: 1, CS: 1, BO: 1, CL: 1, SC: 1, BG: 1, BA: 1, SE: 1 };
-const RE_COD = /^(\d{5,6}(?:\.\d+)?|\d{13,14})\s+/i;
+// Il codice in testa alla riga: quello Metro (5-6 cifre, a volte col punto) oppure il codice a barre.
+// I codici a barre non sono tutti da 13: le bottigliette e i pacchetti piccoli hanno quello corto da 8 (EAN-8),
+// e qualche prodotto estero quello da 12. Senza gli 8, la mezza acqua S. Anna (80582588) veniva saltata.
+const RE_COD = /^(\d{5,6}(?:\.\d+)?|\d{8}|\d{12,14})\s+/i;
 const RE_NUM = /^[\d,.]+$/;
 const RE_IVA = /\s+([ABCDE])(?:\s+\d{1,7})?\s*$/i;
 const RE_SCONTO_PRIMA = /\s+\d{5,7}$/;
